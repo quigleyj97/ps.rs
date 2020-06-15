@@ -1,1 +1,8 @@
 /target
+
+# BIOSes and ISOs cannot be redistributed
+/bios
+/cds
+
+# Platform garbase
+.DS_Store
