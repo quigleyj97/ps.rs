@@ -1,3 +1,4 @@
+use crate::devices::cpu;
 use crate::devices::rom::Rom;
 
 /// This represents the system motherboard.
@@ -5,6 +6,7 @@ use crate::devices::rom::Rom;
 /// This owns all devices, and updates devices with respect to a main clock.
 pub struct Motherboard {
     bios: Rom,
+    pub cpu: cpu::CpuR3000,
 }
 
 impl Motherboard {
@@ -20,9 +22,14 @@ impl Motherboard {
         // no-op
     }
 
+    pub fn tick(&mut self) {
+        cpu::exec(self);
+    }
+
     pub fn new(bios: Vec<u8>) -> Motherboard {
         return Motherboard {
             bios: Rom::from_buf(bios),
+            cpu: cpu::CpuR3000::new(),
         };
     }
 }
