@@ -1,4 +1,5 @@
 pub mod devices;
+pub mod utils;
 
 use std::fs::File;
 use std::io::prelude::*;
