@@ -13,7 +13,9 @@ fn main() {
 
     let bios = read_bios().expect("Could not read BIOS");
 
-    let psx = Motherboard::new(bios);
+    let mut psx = Motherboard::new(bios);
+
+    psx.tick();
 
     println!("Read bios!");
 }
