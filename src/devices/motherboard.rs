@@ -1,5 +1,6 @@
 use crate::devices::bus::BusDevice;
 use crate::devices::cpu;
+use crate::devices::memctrl::MemoryController;
 use crate::devices::rom::Rom;
 use crate::utils::memorymap::{map_device, Device};
 
@@ -8,6 +9,7 @@ use crate::utils::memorymap::{map_device, Device};
 /// This owns all devices, and updates devices with respect to a main clock.
 pub struct Motherboard {
     bios: Rom,
+    memctrl: MemoryController,
     pub cpu: cpu::CpuR3000,
 }
 
@@ -20,6 +22,7 @@ impl Motherboard {
         return Motherboard {
             bios: Rom::from_buf(bios),
             cpu: cpu::CpuR3000::new(),
+            memctrl: MemoryController::new(),
         };
     }
 }
@@ -34,7 +37,7 @@ impl BusDevice for Motherboard {
             // Device::RAM => {}
             // Device::Expansion1 => {}
             // Device::Scratch => {}
-            // Device::IO => {}
+            Device::IO => self.memctrl.read32(local_addr),
             // Device::Expansion2 => {}
             // Device::Expansion3 => {}
             Device::BIOS => self.bios.read32(local_addr),
@@ -54,7 +57,7 @@ impl BusDevice for Motherboard {
             // Device::RAM => {}
             // Device::Expansion1 => {}
             // Device::Scratch => {}
-            // Device::IO => {}
+            Device::IO => self.memctrl.peek32(local_addr),
             // Device::Expansion2 => {}
             // Device::Expansion3 => {}
             Device::BIOS => self.bios.peek32(local_addr),
@@ -66,7 +69,7 @@ impl BusDevice for Motherboard {
     }
 
     fn write32(&mut self, addr: u32, data: u32) {
-        let (_seg, dev, _local_addr) = map_device(addr);
+        let (_seg, dev, local_addr) = map_device(addr);
         if addr % 4 != 0 {
             panic!("Unaligned memory access: 0x{:08X}", addr);
         }
@@ -74,7 +77,7 @@ impl BusDevice for Motherboard {
             // Device::RAM => {}
             // Device::Expansion1 => {}
             // Device::Scratch => {}
-            // Device::IO => {}
+            Device::IO => self.memctrl.write32(local_addr, data),
             // Device::Expansion2 => {}
             // Device::Expansion3 => {}
             Device::BIOS => panic!(
