@@ -1,4 +1,26 @@
 use crate::devices::bus::BusDevice;
+use crate::utils::cpustructs::{Instruction, Mnemonic};
+use crate::utils::decode::decode_instruction;
+
+macro_rules! sign_extend {
+    ($val: expr) => {{
+        (i32::from($val as i16) as u32)
+    }};
+}
+
+macro_rules! zero_extend {
+    ($val: expr) => {{
+        (($val as u16) as u32)
+    }};
+}
+
+macro_rules! op_fn {
+    ($mnemonic:ident, ($cpu: ident, $instr: ident), $body: expr) => {
+        fn $mnemonic<T: WithCpu + BusDevice>($cpu: &mut T, $instr: Instruction) {
+            $body
+        }
+    };
+}
 
 #[derive(Clone, Debug)]
 pub struct CpuState {
@@ -57,11 +79,101 @@ pub fn tick<T: WithCpu>(mb: &mut T) -> bool {
 
 /// Unconditionally advance the state of the CPU
 pub fn exec<T: WithCpu + BusDevice>(mb: &mut T) {
-    let cpu = mb.cpu_mut();
-    cpu.cycles += 1;
-    drop(cpu);
-    mb.read32(mb.cpu().state.pc);
+    let pc = mb.cpu().state.pc;
+    let word = mb.read32(pc);
+    let (mnemonic, instruction) = decode_instruction(word);
+    let fn_handler = match_handler::<T>(mnemonic);
+    fn_handler(mb, instruction);
+    // update CPU state
+    {
+        let cpu = mb.cpu_mut();
+        cpu.cycles += 1;
+        cpu.state.pc += 4;
+    }
 }
+
+//#region Cpu Instructions
+#[allow(type_alias_bounds)] // leaving this in for self-documenting reasons
+type OpcodeHandler<T: WithCpu + BusDevice> = fn(&mut T, Instruction);
+
+fn match_handler<T: WithCpu + BusDevice>(mnemonic: Mnemonic) -> OpcodeHandler<T> {
+    match mnemonic {
+        Mnemonic::ADD => op_add,
+        Mnemonic::ADDI => op_addi,
+        Mnemonic::ADDIU => op_addiu,
+        Mnemonic::ADDU => op_addu,
+        Mnemonic::LUI => op_lui,
+        Mnemonic::ORI => op_ori,
+        Mnemonic::SW => op_sw,
+        _ => panic!("Operation {:?} not implemented", mnemonic),
+    }
+}
+
+op_fn!(op_add, (mb, instr), {
+    let source = instr.rs() as usize;
+    let target = instr.rt() as usize;
+    let dest = instr.rd() as usize;
+    let cpu = mb.cpu_mut();
+    cpu.state.registers[dest] =
+        cpu.state.registers[source].wrapping_add(cpu.state.registers[target]);
+    // TODO: overflow exception routing via COP0
+});
+
+op_fn!(op_addi, (mb, instr), {
+    let source = instr.rs() as usize;
+    let target = instr.rt() as usize;
+    let data = sign_extend!(instr.immediate());
+    let cpu = mb.cpu_mut();
+    cpu.state.registers[target] = cpu.state.registers[source].wrapping_add(data);
+    // TODO: overflow exception
+});
+
+op_fn!(op_addiu, (mb, instr), {
+    let source = instr.rs() as usize;
+    let target = instr.rt() as usize;
+    let data = sign_extend!(instr.immediate());
+    let cpu = mb.cpu_mut();
+    cpu.state.registers[target] = cpu.state.registers[source].wrapping_add(data);
+});
+
+op_fn!(op_addu, (mb, instr), {
+    let source = instr.rs() as usize;
+    let target = instr.rt() as usize;
+    let dest = instr.rd() as usize;
+    let cpu = mb.cpu_mut();
+    cpu.state.registers[dest] =
+        cpu.state.registers[source].wrapping_add(cpu.state.registers[target]);
+});
+
+// skip
+
+op_fn!(op_lui, (mb, instr), {
+    let data = u32::from(instr.immediate()) << 16;
+    let cpu = mb.cpu_mut();
+    cpu.state.registers[instr.rt() as usize] = data;
+});
+
+// skip
+
+op_fn!(op_ori, (mb, instr), {
+    let source = instr.rs() as usize;
+    let target = instr.rt() as usize;
+    let data = zero_extend!(instr.immediate());
+    let cpu = mb.cpu_mut();
+    cpu.state.registers[target] = cpu.state.registers[source] | data;
+});
+
+// skip
+
+op_fn!(op_sw, (mb, instr), {
+    let base = instr.rs() as usize;
+    let target = instr.rt() as usize;
+    let data = sign_extend!(instr.immediate());
+    let addr = mb.cpu().state.registers[base] + data;
+    mb.write32(addr, mb.cpu().state.registers[target]);
+});
+
+//#endregion
 
 #[cfg(test)]
 mod test {

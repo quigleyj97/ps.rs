@@ -9,19 +9,20 @@ use std::path::Path;
 use crate::devices::motherboard::Motherboard;
 
 fn main() {
-    println!("Hello, world!");
-
     let bios = read_bios().expect("Could not read BIOS");
 
     let mut psx = Motherboard::new(bios);
 
-    psx.tick();
+    eprintln!("Starting emulation...");
 
-    println!("Read bios!");
+    loop {
+        psx.tick();
+    }
 }
 
 fn read_bios() -> Result<Vec<u8>> {
     const BIOS_PATH: &str = "./bios/SCPH1001.bin";
+    eprintln!("Loading bios from pwd: {:?}", BIOS_PATH);
 
     let path = Path::new(&BIOS_PATH);
     let mut file =
@@ -29,6 +30,8 @@ fn read_bios() -> Result<Vec<u8>> {
     let mut buf = vec![0u8; 524_288]; // 524,288 = number of bytes in 512kib
 
     file.read_exact(&mut buf[..])?;
+
+    eprintln!("BIOS loaded");
 
     Result::Ok(buf)
 }

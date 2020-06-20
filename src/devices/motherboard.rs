@@ -1,12 +1,13 @@
 use crate::devices::bus::BusDevice;
 use crate::devices::cpu;
 use crate::devices::rom::Rom;
+use crate::utils::memorymap::{map_device, Device};
 
 /// This represents the system motherboard.
 ///
 /// This owns all devices, and updates devices with respect to a main clock.
 pub struct Motherboard {
-    _bios: Rom,
+    bios: Rom,
     pub cpu: cpu::CpuR3000,
 }
 
@@ -17,23 +18,74 @@ impl Motherboard {
 
     pub fn new(bios: Vec<u8>) -> Motherboard {
         return Motherboard {
-            _bios: Rom::from_buf(bios),
+            bios: Rom::from_buf(bios),
             cpu: cpu::CpuR3000::new(),
         };
     }
 }
 
 impl BusDevice for Motherboard {
-    fn read32(&mut self, _addr: u32) -> u32 {
-        0
+    fn read32(&mut self, addr: u32) -> u32 {
+        let (_seg, dev, local_addr) = map_device(addr);
+        if addr % 4 != 0 {
+            panic!("Unaligned memory access: 0x{:08X}", addr);
+        }
+        match dev {
+            // Device::RAM => {}
+            // Device::Expansion1 => {}
+            // Device::Scratch => {}
+            // Device::IO => {}
+            // Device::Expansion2 => {}
+            // Device::Expansion3 => {}
+            Device::BIOS => self.bios.read32(local_addr),
+            _ => panic!("Unmapped memory: 0x{:08X}", addr),
+            // Device::IOCacheControl => {}
+            // Device::None => {}
+            // Device::VMemException => {}
+        }
     }
 
-    fn peek32(&self, _addr: u32) -> Option<u32> {
-        Some(0)
+    fn peek32(&self, addr: u32) -> Option<u32> {
+        let (_seg, dev, local_addr) = map_device(addr);
+        if addr % 4 != 0 {
+            panic!("Unaligned memory access: 0x{:08X}", addr);
+        }
+        match dev {
+            // Device::RAM => {}
+            // Device::Expansion1 => {}
+            // Device::Scratch => {}
+            // Device::IO => {}
+            // Device::Expansion2 => {}
+            // Device::Expansion3 => {}
+            Device::BIOS => self.bios.peek32(local_addr),
+            _ => None,
+            // Device::IOCacheControl => {}
+            // Device::None => {}
+            // Device::VMemException => {}
+        }
     }
 
-    fn write32(&mut self, _addr: u32, _data: u32) {
-        // no-op
+    fn write32(&mut self, addr: u32, data: u32) {
+        let (_seg, dev, _local_addr) = map_device(addr);
+        if addr % 4 != 0 {
+            panic!("Unaligned memory access: 0x{:08X}", addr);
+        }
+        match dev {
+            // Device::RAM => {}
+            // Device::Expansion1 => {}
+            // Device::Scratch => {}
+            // Device::IO => {}
+            // Device::Expansion2 => {}
+            // Device::Expansion3 => {}
+            Device::BIOS => panic!(
+                "Attempt to write 0x{:08X} to read-only BIOS at ${:08}",
+                data, addr
+            ),
+            _ => panic!("Unmapped memory: 0x{:08X}", addr),
+            // Device::IOCacheControl => {}
+            // Device::None => {}
+            // Device::VMemException => {}
+        }
     }
 }
 
