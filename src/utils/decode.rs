@@ -83,7 +83,7 @@ pub fn decode_instruction(word: u32) -> (Mnemonic, Instruction) {
     let mnemonic = match instr.op() {
         OP_SPECIAL => decode_register_instruction(instr),
         OP_REGIMM => decode_regimm_instruction(instr),
-        op if (op >> 2) == OP_COPz => Mnemonic::COPz,
+        op if (op >> 2) == OP_COPz => decode_copz_instruction(instr),
         op if (op >> 2) == OP_LWCz => Mnemonic::LWCz,
         op if (op >> 2) == OP_SWCz => Mnemonic::SWCz,
         OP_ADDI => Mnemonic::ADDI,
@@ -161,6 +161,16 @@ fn decode_regimm_instruction(instr: Instruction) -> Mnemonic {
     }
 }
 
+fn decode_copz_instruction(instr: Instruction) -> Mnemonic {
+    return match instr.rs() {
+        0b10000 => Mnemonic::COPz,
+        0b00010 => Mnemonic::CFCz,
+        0b00000 => Mnemonic::MFCz,
+        0b00100 => Mnemonic::MTCz,
+        _ => panic!("Invalid COPz instruction: 0x{:08X}", *instr),
+    };
+}
+
 #[cfg(test)]
 mod test {
     use super::*;
@@ -191,5 +201,12 @@ mod test {
         const BLTZ_INSTR: u32 = 0x0400_0000;
         let (mnemonic, _instr) = decode_instruction(BLTZ_INSTR);
         assert_eq!(mnemonic, Mnemonic::BLTZ);
+    }
+
+    #[test]
+    fn decodes_mtc0_instr() {
+        const MTC0_INSTR: u32 = 0x408C_6000;
+        let (mnemonic, _instr) = decode_instruction(MTC0_INSTR);
+        assert_eq!(mnemonic, Mnemonic::MTCz);
     }
 }

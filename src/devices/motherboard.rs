@@ -84,8 +84,14 @@ impl BusDevice for Motherboard {
                 "Attempt to write 0x{:08X} to read-only BIOS at ${:08}",
                 data, addr
             ),
+            Device::IOCacheControl => {
+                // todo: implement actual cache control
+                println!(
+                    "Write to cache control register ignored: 0x{:08X} = 0x{:08X}",
+                    addr, data
+                );
+            }
             _ => panic!("Unmapped memory: 0x{:08X}", addr),
-            // Device::IOCacheControl => {}
             // Device::None => {}
             // Device::VMemException => {}
         }
