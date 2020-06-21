@@ -67,6 +67,15 @@ pub trait WithCpu {
     fn cpu(&self) -> &CpuR3000;
 }
 
+fn write_reg(cpu: &mut CpuR3000, addr: usize, data: u32) {
+    cpu.state.registers[addr] = data;
+    cpu.state.registers[0] = 0; // coerce the 0-register to be 0
+}
+
+fn get_reg(cpu: &CpuR3000, addr: usize) -> u32 {
+    return cpu.state.registers[addr];
+}
+
 /// Burn cycles if the CPU needs to wait, and return whether the CPU is in sync
 pub fn tick<T: WithCpu>(mb: &mut T) -> bool {
     let cpu = mb.cpu_mut();
@@ -82,6 +91,7 @@ pub fn exec<T: WithCpu + BusDevice>(mb: &mut T) {
     let pc = mb.cpu().state.pc;
     let word = mb.read32(pc);
     let (mnemonic, instruction) = decode_instruction(word);
+    println!("STEP {:?} 0x{:08X}", mnemonic, *instruction);
     let fn_handler = match_handler::<T>(mnemonic);
     fn_handler(mb, instruction);
     // update CPU state
@@ -104,6 +114,7 @@ fn match_handler<T: WithCpu + BusDevice>(mnemonic: Mnemonic) -> OpcodeHandler<T>
         Mnemonic::ADDU => op_addu,
         Mnemonic::LUI => op_lui,
         Mnemonic::ORI => op_ori,
+        Mnemonic::SLL => op_sll,
         Mnemonic::SW => op_sw,
         _ => panic!("Operation {:?} not implemented", mnemonic),
     }
@@ -114,8 +125,11 @@ op_fn!(op_add, (mb, instr), {
     let target = instr.rt() as usize;
     let dest = instr.rd() as usize;
     let cpu = mb.cpu_mut();
-    cpu.state.registers[dest] =
-        cpu.state.registers[source].wrapping_add(cpu.state.registers[target]);
+    write_reg(
+        cpu,
+        dest,
+        get_reg(cpu, source).wrapping_add(get_reg(cpu, target)),
+    );
     // TODO: overflow exception routing via COP0
 });
 
@@ -124,7 +138,7 @@ op_fn!(op_addi, (mb, instr), {
     let target = instr.rt() as usize;
     let data = sign_extend!(instr.immediate());
     let cpu = mb.cpu_mut();
-    cpu.state.registers[target] = cpu.state.registers[source].wrapping_add(data);
+    write_reg(cpu, target, get_reg(cpu, source).wrapping_add(data));
     // TODO: overflow exception
 });
 
@@ -133,7 +147,7 @@ op_fn!(op_addiu, (mb, instr), {
     let target = instr.rt() as usize;
     let data = sign_extend!(instr.immediate());
     let cpu = mb.cpu_mut();
-    cpu.state.registers[target] = cpu.state.registers[source].wrapping_add(data);
+    write_reg(cpu, target, get_reg(cpu, source).wrapping_add(data));
 });
 
 op_fn!(op_addu, (mb, instr), {
@@ -141,8 +155,11 @@ op_fn!(op_addu, (mb, instr), {
     let target = instr.rt() as usize;
     let dest = instr.rd() as usize;
     let cpu = mb.cpu_mut();
-    cpu.state.registers[dest] =
-        cpu.state.registers[source].wrapping_add(cpu.state.registers[target]);
+    write_reg(
+        cpu,
+        dest,
+        get_reg(cpu, source).wrapping_add(get_reg(cpu, target)),
+    );
 });
 
 // skip
@@ -150,7 +167,7 @@ op_fn!(op_addu, (mb, instr), {
 op_fn!(op_lui, (mb, instr), {
     let data = u32::from(instr.immediate()) << 16;
     let cpu = mb.cpu_mut();
-    cpu.state.registers[instr.rt() as usize] = data;
+    write_reg(cpu, instr.rt() as usize, data);
 });
 
 // skip
@@ -160,7 +177,17 @@ op_fn!(op_ori, (mb, instr), {
     let target = instr.rt() as usize;
     let data = zero_extend!(instr.immediate());
     let cpu = mb.cpu_mut();
-    cpu.state.registers[target] = cpu.state.registers[source] | data;
+    write_reg(cpu, target, get_reg(cpu, source) | data);
+});
+
+// skip
+
+op_fn!(op_sll, (mb, instr), {
+    let target = instr.rt() as usize;
+    let dest = instr.rd() as usize;
+    let shamt = instr.shamt();
+    let cpu = mb.cpu_mut();
+    write_reg(cpu, dest, get_reg(cpu, target).wrapping_shl(shamt as u32));
 });
 
 // skip
