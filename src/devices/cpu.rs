@@ -2,6 +2,7 @@ use crate::devices::bus::BusDevice;
 use crate::devices::cop0::Cop0;
 use crate::utils::cpustructs::{Exception, Instruction, Mnemonic};
 use crate::utils::decode::decode_instruction;
+use log::{debug, trace};
 
 macro_rules! sign_extend {
     ($val: expr) => {{
@@ -99,7 +100,7 @@ fn branch(cpu: &mut CpuR3000, offset: u16) {
 
 fn write32<T: WithCpu + BusDevice>(mb: &mut T, addr: u32, data: u32) {
     if mb.cpu().cop0.is_cache_isolated() {
-        eprintln!("Cache isolation active, but cache is unimplemented");
+        debug!(target: "cpu", "Cache isolation active, but cache is unimplemented");
         return;
     }
     return mb.write32(addr, data);
@@ -120,7 +121,7 @@ pub fn exec<T: WithCpu + BusDevice>(mb: &mut T) {
     let pc = mb.cpu().state.pc;
     let (mnemonic, instruction) = decode_instruction(mb.cpu().state.next_instruction);
     mb.cpu_mut().state.next_instruction = mb.read32(pc);
-    println!("STEP {:?} 0x{:08X}", mnemonic, *instruction);
+    trace!(target: "cpu", "STEP {:?} 0x{:08X}", mnemonic, *instruction);
     let fn_handler = match_handler::<T>(mnemonic);
     match fn_handler(mb, instruction) {
         None => {} // do nothing- operation completed successfully

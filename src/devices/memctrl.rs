@@ -1,4 +1,5 @@
 use super::bus::BusDevice;
+use log::debug;
 
 const EXP1_BASE_ADDR_PORT: u32 = 0x0;
 const EXP2_BASE_ADDR_PORT: u32 = 0x4;
@@ -34,7 +35,7 @@ impl BusDevice for MemoryController {
             | CDROM_DELAY_PORT | EXP2_DELAY_PORT | COM_DELAY_PORT => {
                 todo!("Read: Other control ports unimplemented")
             }
-            _ => panic!("Unsupported memory IO port: 0x{:08X}", addr),
+            _ => panic!("Unsupported memory IO port: ${:08X}", addr),
         }
     }
     fn peek32(&self, addr: u32) -> Option<u32> {
@@ -57,9 +58,9 @@ impl BusDevice for MemoryController {
                 }
             }
             _ => {
-                println!(
-                    "[MemoryController] Delay port unimplemented: 0x{:02X}. Skipping",
-                    addr
+                debug!(
+                    target: "memctrl",
+                    "Delay port unimplemented: ${:02X}. Skipping", addr
                 );
             }
         }

@@ -84,7 +84,7 @@ pub fn map_device(addr: u32) -> (Segment, Device, u32) {
     if segment == Segment::KSEG2 {
         let addr = addr - KSEG2_RANGE.start;
         if addr < CACHE_CTRL_RANGE.start || addr >= CACHE_CTRL_RANGE.end {
-            panic!("Invalid KSEG2 address: 0x{:08X}", addr + KSEG2_RANGE.start);
+            panic!("Invalid KSEG2 address: ${:08X}", addr + KSEG2_RANGE.start);
         }
         return (
             segment,
@@ -118,7 +118,7 @@ pub fn map_device(addr: u32) -> (Segment, Device, u32) {
             (Device::BIOS, seg_local_addr - BIOS_RANGE.start)
         } else {
             panic!(
-                "Invalid memory location in {:?}: 0x{:08X} / 0x{:08X}",
+                "Invalid memory location in {:?}: ${:08X} / ${:08X}",
                 segment, addr, seg_local_addr
             )
         };

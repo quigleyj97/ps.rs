@@ -3,6 +3,7 @@ use crate::devices::cpu;
 use crate::devices::memctrl::MemoryController;
 use crate::devices::rom::Rom;
 use crate::utils::memorymap::{map_device, Device};
+use log::debug;
 
 /// This represents the system motherboard.
 ///
@@ -31,7 +32,7 @@ impl BusDevice for Motherboard {
     fn read32(&mut self, addr: u32) -> u32 {
         let (_seg, dev, local_addr) = map_device(addr);
         if addr % 4 != 0 {
-            panic!("Unaligned memory access: 0x{:08X}", addr);
+            panic!("Unaligned memory access: ${:08X}", addr);
         }
         match dev {
             // Device::RAM => {}
@@ -41,7 +42,7 @@ impl BusDevice for Motherboard {
             // Device::Expansion2 => {}
             // Device::Expansion3 => {}
             Device::BIOS => self.bios.read32(local_addr),
-            _ => panic!("Unmapped memory: 0x{:08X}", addr),
+            _ => panic!("Unmapped memory: ${:08X}", addr),
             // Device::IOCacheControl => {}
             // Device::None => {}
             // Device::VMemException => {}
@@ -51,7 +52,7 @@ impl BusDevice for Motherboard {
     fn peek32(&self, addr: u32) -> Option<u32> {
         let (_seg, dev, local_addr) = map_device(addr);
         if addr % 4 != 0 {
-            panic!("Unaligned memory access: 0x{:08X}", addr);
+            panic!("Unaligned memory access: ${:08X}", addr);
         }
         match dev {
             // Device::RAM => {}
@@ -71,7 +72,7 @@ impl BusDevice for Motherboard {
     fn write32(&mut self, addr: u32, data: u32) {
         let (_seg, dev, local_addr) = map_device(addr);
         if addr % 4 != 0 {
-            panic!("Unaligned memory access: 0x{:08X}", addr);
+            panic!("Unaligned memory access: ${:08X}", addr);
         }
         match dev {
             // Device::RAM => {}
@@ -86,12 +87,12 @@ impl BusDevice for Motherboard {
             ),
             Device::IOCacheControl => {
                 // todo: implement actual cache control
-                println!(
-                    "Write to cache control register ignored: 0x{:08X} = 0x{:08X}",
+                debug!(target: "mb",
+                    "Write to cache control register ignored: ${:08X} = 0x{:08X}",
                     addr, data
                 );
             }
-            _ => panic!("Unmapped memory: 0x{:08X}", addr),
+            _ => panic!("Unmapped memory: ${:08X}", addr),
             // Device::None => {}
             // Device::VMemException => {}
         }
