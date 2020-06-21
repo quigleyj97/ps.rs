@@ -188,7 +188,7 @@ mod test {
     }
 
     #[test]
-    #[should_panic(expected = "Invalid memory location in KSEG1: 0xBF800000")]
+    #[should_panic(expected = "Invalid memory location in KSEG1: $BF800000")]
     fn panics_when_attempting_to_map_scratchpad_to_kseg1() {
         map_device(0xBF80_0000);
     }
