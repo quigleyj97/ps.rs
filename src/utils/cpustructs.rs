@@ -221,6 +221,15 @@ pub enum InstructionFormat {
     Register,
 }
 
+/// Enum for processor exceptions
+#[derive(Debug, Eq, PartialEq)]
+pub enum Exception {
+    /// Raised when an ALU operation resulted in an overflow
+    IntegerOverflow,
+    /// Raised when attempting to issue a command to an unusable coprocessor
+    CoprocessorUnusable,
+}
+
 const INSTR_PART_OP: u32 = 0xFC00_0000;
 const INSTR_PART_RS: u32 = 0x03E0_0000;
 const INSTR_PART_RT: u32 = 0x001F_0000;

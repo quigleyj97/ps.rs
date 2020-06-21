@@ -1,6 +1,6 @@
 use crate::devices::bus::BusDevice;
 use crate::devices::cop0::Cop0;
-use crate::utils::cpustructs::{Instruction, Mnemonic};
+use crate::utils::cpustructs::{Exception, Instruction, Mnemonic};
 use crate::utils::decode::decode_instruction;
 
 macro_rules! sign_extend {
@@ -17,7 +17,10 @@ macro_rules! zero_extend {
 
 macro_rules! op_fn {
     ($mnemonic:ident, ($cpu: ident, $instr: ident), $body: expr) => {
-        fn $mnemonic<T: WithCpu + BusDevice>($cpu: &mut T, $instr: Instruction) {
+        fn $mnemonic<T: WithCpu + BusDevice>(
+            $cpu: &mut T,
+            $instr: Instruction,
+        ) -> Option<Exception> {
             $body
         }
     };
@@ -86,6 +89,14 @@ fn get_reg(cpu: &CpuR3000, addr: usize) -> u32 {
     return cpu.state.registers[addr];
 }
 
+fn branch(cpu: &mut CpuR3000, offset: u16) {
+    let new_pc = cpu
+        .state
+        .pc
+        .wrapping_add(sign_extend!((offset as u32) << 2));
+    cpu.state.pc = new_pc - 4; // correct for PC advance
+}
+
 fn write32<T: WithCpu + BusDevice>(mb: &mut T, addr: u32, data: u32) {
     if mb.cpu().cop0.is_cache_isolated() {
         eprintln!("Cache isolation active, but cache is unimplemented");
@@ -111,7 +122,14 @@ pub fn exec<T: WithCpu + BusDevice>(mb: &mut T) {
     mb.cpu_mut().state.next_instruction = mb.read32(pc);
     println!("STEP {:?} 0x{:08X}", mnemonic, *instruction);
     let fn_handler = match_handler::<T>(mnemonic);
-    fn_handler(mb, instruction);
+    match fn_handler(mb, instruction) {
+        None => {} // do nothing- operation completed successfully
+        Some(e) => {
+            // normally we'd route this to cop0 to handle, but I haven't
+            // implemented much of that coprocessor yet.
+            todo!("Exception handling via cop0 for exception {:?}", e);
+        }
+    }
     // update CPU state
     {
         let cpu = mb.cpu_mut();
@@ -122,7 +140,7 @@ pub fn exec<T: WithCpu + BusDevice>(mb: &mut T) {
 
 //#region Cpu Instructions
 #[allow(type_alias_bounds)] // leaving this in for self-documenting reasons
-type OpcodeHandler<T: WithCpu + BusDevice> = fn(&mut T, Instruction);
+type OpcodeHandler<T: WithCpu + BusDevice> = fn(&mut T, Instruction) -> Option<Exception>;
 
 #[rustfmt::skip]
 fn match_handler<T: WithCpu + BusDevice>(mnemonic: Mnemonic) -> OpcodeHandler<T> {
@@ -131,16 +149,16 @@ fn match_handler<T: WithCpu + BusDevice>(mnemonic: Mnemonic) -> OpcodeHandler<T>
         Mnemonic::ADDI => op_addi,
         Mnemonic::ADDIU => op_addiu,
         Mnemonic::ADDU => op_addu,
-        Mnemonic::AND =>            /*op_and,*/todo!("instr {:?}", mnemonic),
-        Mnemonic::ANDI =>           /*op_andi,*/todo!("instr {:?}", mnemonic),
-        Mnemonic::BEQ =>            /*op_beq,*/todo!("instr {:?}", mnemonic),
+        Mnemonic::AND => op_and,
+        Mnemonic::ANDI => op_andi,
+        Mnemonic::BEQ => op_beq,
         Mnemonic::BGEZ =>           /*op_bgez,*/todo!("instr {:?}", mnemonic),
         Mnemonic::BGEZAL =>         /*op_bgezal,*/todo!("instr {:?}", mnemonic),
         Mnemonic::BGTZ =>           /*op_bgtz,*/todo!("instr {:?}", mnemonic),
         Mnemonic::BLEZ =>           /*op_blez,*/todo!("instr {:?}", mnemonic),
         Mnemonic::BLTZ =>           /*op_bltz,*/todo!("instr {:?}", mnemonic),
         Mnemonic::BLTZAL =>         /*op_bltzal,*/todo!("instr {:?}", mnemonic),
-        Mnemonic::BNE =>            /*op_bne,*/todo!("instr {:?}", mnemonic),
+        Mnemonic::BNE => op_bne,
         Mnemonic::BREAK =>          /*op_break,*/todo!("instr {:?}", mnemonic),
         Mnemonic::CFCz =>           /*op_cfcz,*/todo!("instr {:?}", mnemonic),
         Mnemonic::COPz =>           /*op_copz,*/todo!("instr {:?}", mnemonic),
@@ -200,12 +218,16 @@ op_fn!(op_add, (mb, instr), {
     let target = instr.rt() as usize;
     let dest = instr.rd() as usize;
     let cpu = mb.cpu_mut();
-    write_reg(
-        cpu,
-        dest,
-        get_reg(cpu, source).wrapping_add(get_reg(cpu, target)),
-    );
-    // TODO: overflow exception routing via COP0
+    let source_data = get_reg(cpu, source);
+    let target_data = get_reg(cpu, target);
+    // test for overflow
+    match (source_data as i32).checked_add(target_data as i32) {
+        Some(res) => {
+            write_reg(cpu, dest, res as u32);
+            None
+        }
+        None => Some(Exception::IntegerOverflow),
+    }
 });
 
 op_fn!(op_addi, (mb, instr), {
@@ -213,8 +235,14 @@ op_fn!(op_addi, (mb, instr), {
     let target = instr.rt() as usize;
     let data = sign_extend!(instr.immediate());
     let cpu = mb.cpu_mut();
-    write_reg(cpu, target, get_reg(cpu, source).wrapping_add(data));
-    // TODO: overflow exception
+    let source_data = get_reg(cpu, source);
+    match (source_data as i32).checked_add(data as i32) {
+        Some(res) => {
+            write_reg(cpu, target, res as u32);
+            None
+        }
+        None => Some(Exception::IntegerOverflow),
+    }
 });
 
 op_fn!(op_addiu, (mb, instr), {
@@ -223,6 +251,7 @@ op_fn!(op_addiu, (mb, instr), {
     let data = sign_extend!(instr.immediate());
     let cpu = mb.cpu_mut();
     write_reg(cpu, target, get_reg(cpu, source).wrapping_add(data));
+    None
 });
 
 op_fn!(op_addu, (mb, instr), {
@@ -235,6 +264,45 @@ op_fn!(op_addu, (mb, instr), {
         dest,
         get_reg(cpu, source).wrapping_add(get_reg(cpu, target)),
     );
+    None
+});
+
+op_fn!(op_and, (mb, instr), {
+    let source = instr.rs() as usize;
+    let target = instr.rt() as usize;
+    let dest = instr.rd() as usize;
+    let cpu = mb.cpu_mut();
+    write_reg(cpu, dest, get_reg(cpu, source) & get_reg(cpu, target));
+    None
+});
+
+op_fn!(op_andi, (mb, instr), {
+    let source = instr.rs() as usize;
+    let target = instr.rt() as usize;
+    let data = zero_extend!(instr.immediate());
+    let cpu = mb.cpu_mut();
+    write_reg(cpu, target, get_reg(cpu, source) & data);
+    None
+});
+
+op_fn!(op_beq, (mb, instr), {
+    let source = instr.rs() as usize;
+    let target = instr.rt() as usize;
+    if get_reg(mb.cpu(), source) == get_reg(mb.cpu(), target) {
+        branch(mb.cpu_mut(), instr.immediate());
+    }
+    None
+});
+
+// skip
+
+op_fn!(op_bne, (mb, instr), {
+    let source = instr.rs() as usize;
+    let target = instr.rt() as usize;
+    if get_reg(mb.cpu(), source) != get_reg(mb.cpu(), target) {
+        branch(mb.cpu_mut(), instr.immediate());
+    }
+    None
 });
 
 // skip
@@ -243,7 +311,7 @@ op_fn!(op_j, (mb, instr), {
     let target = instr.target() << 2;
     let new_pc = target | mb.cpu().state.pc & 0xF000_0000; // select the 4 MSBs of the old PC
     mb.cpu_mut().state.pc = new_pc - 4; // correct for the PC advance later
-    mb.cpu_mut().state.wait += 1; //
+    None
 });
 
 // skip
@@ -252,6 +320,7 @@ op_fn!(op_lui, (mb, instr), {
     let data = u32::from(instr.immediate()) << 16;
     let cpu = mb.cpu_mut();
     write_reg(cpu, instr.rt() as usize, data);
+    None
 });
 
 // skip
@@ -260,10 +329,13 @@ op_fn!(op_mtcz, (mb, instr), {
     let coproc = instr.op() & 0b11;
     let data = get_reg(mb.cpu(), instr.rt() as usize);
     match coproc {
-        0 => mb.cpu_mut().cop0.mtc(instr.rd() as usize, data),
-        _ => panic!("Attempt to MTCz on unused coprocessor: {}", coproc),
+        0 => {
+            mb.cpu_mut().cop0.mtc(instr.rd() as usize, data);
+            None
+        }
+        // TODO: Cop2 is the GTE
+        _ => Some(Exception::CoprocessorUnusable),
     }
-    // todo: Coprocessor unusable exception
 });
 
 // skip
@@ -274,6 +346,7 @@ op_fn!(op_or, (mb, instr), {
     let dest = instr.rd() as usize;
     let cpu = mb.cpu_mut();
     write_reg(cpu, dest, get_reg(cpu, source) | get_reg(cpu, target));
+    None
 });
 
 op_fn!(op_ori, (mb, instr), {
@@ -282,6 +355,7 @@ op_fn!(op_ori, (mb, instr), {
     let data = zero_extend!(instr.immediate());
     let cpu = mb.cpu_mut();
     write_reg(cpu, target, get_reg(cpu, source) | data);
+    None
 });
 
 // skip
@@ -292,6 +366,7 @@ op_fn!(op_sll, (mb, instr), {
     let shamt = instr.shamt();
     let cpu = mb.cpu_mut();
     write_reg(cpu, dest, get_reg(cpu, target).wrapping_shl(shamt as u32));
+    None
 });
 
 // skip
@@ -301,7 +376,11 @@ op_fn!(op_sw, (mb, instr), {
     let target = instr.rt() as usize;
     let data = sign_extend!(instr.immediate());
     let addr = mb.cpu().state.registers[base] + data;
+    // TODO: TLB refill/invalid/modified exceptions
+    // TODO: Bus errors
+    // TODO: Address errors
     write32(mb, addr, get_reg(mb.cpu(), target));
+    None
 });
 
 //#endregion
