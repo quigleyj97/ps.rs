@@ -1,4 +1,5 @@
 use crate::devices::bus::BusDevice;
+use crate::devices::cop0::Cop0;
 use crate::utils::cpustructs::{Instruction, Mnemonic};
 use crate::utils::decode::decode_instruction;
 
@@ -57,6 +58,7 @@ pub const CPU_POWERON_STATE: CpuState = CpuState {
 pub struct CpuR3000 {
     pub state: CpuState,
     pub cycles: u64,
+    pub cop0: Cop0,
 }
 
 impl CpuR3000 {
@@ -64,6 +66,7 @@ impl CpuR3000 {
         return CpuR3000 {
             state: CPU_POWERON_STATE.clone(),
             cycles: 0,
+            cop0: Cop0::new(),
         };
     }
 }
@@ -81,6 +84,14 @@ fn write_reg(cpu: &mut CpuR3000, addr: usize, data: u32) {
 
 fn get_reg(cpu: &CpuR3000, addr: usize) -> u32 {
     return cpu.state.registers[addr];
+}
+
+fn write32<T: WithCpu + BusDevice>(mb: &mut T, addr: u32, data: u32) {
+    if mb.cpu().cop0.is_cache_isolated() {
+        eprintln!("Cache isolation active, but cache is unimplemented");
+        return;
+    }
+    return mb.write32(addr, data);
 }
 
 /// Burn cycles if the CPU needs to wait, and return whether the CPU is in sync
@@ -152,7 +163,7 @@ fn match_handler<T: WithCpu + BusDevice>(mnemonic: Mnemonic) -> OpcodeHandler<T>
         Mnemonic::MFCz =>           /*op_mfcz,*/todo!("instr {:?}", mnemonic),
         Mnemonic::MFHI =>           /*op_mfhi,*/todo!("instr {:?}", mnemonic),
         Mnemonic::MFLO =>           /*op_mflo,*/todo!("instr {:?}", mnemonic),
-        Mnemonic::MTCz =>           /*op_mtcz,*/todo!("instr {:?}", mnemonic),
+        Mnemonic::MTCz => op_mtcz,
         Mnemonic::MTHI =>           /*op_mthi,*/todo!("instr {:?}", mnemonic),
         Mnemonic::MTLO =>           /*op_mtlo,*/todo!("instr {:?}", mnemonic),
         Mnemonic::MULT =>           /*op_mult,*/todo!("instr {:?}", mnemonic),
@@ -245,6 +256,18 @@ op_fn!(op_lui, (mb, instr), {
 
 // skip
 
+op_fn!(op_mtcz, (mb, instr), {
+    let coproc = instr.op() & 0b11;
+    let data = get_reg(mb.cpu(), instr.rt() as usize);
+    match coproc {
+        0 => mb.cpu_mut().cop0.mtc(instr.rd() as usize, data),
+        _ => panic!("Attempt to MTCz on unused coprocessor: {}", coproc),
+    }
+    // todo: Coprocessor unusable exception
+});
+
+// skip
+
 op_fn!(op_or, (mb, instr), {
     let source = instr.rs() as usize;
     let target = instr.rt() as usize;
@@ -278,7 +301,7 @@ op_fn!(op_sw, (mb, instr), {
     let target = instr.rt() as usize;
     let data = sign_extend!(instr.immediate());
     let addr = mb.cpu().state.registers[base] + data;
-    mb.write32(addr, mb.cpu().state.registers[target]);
+    write32(mb, addr, get_reg(mb.cpu(), target));
 });
 
 //#endregion
