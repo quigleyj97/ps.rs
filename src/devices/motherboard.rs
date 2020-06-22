@@ -1,6 +1,7 @@
 use crate::devices::bus::BusDevice;
 use crate::devices::cpu;
 use crate::devices::memctrl::MemoryController;
+use crate::devices::ram::Ram;
 use crate::devices::rom::Rom;
 use crate::utils::memorymap::{map_device, Device};
 use log::debug;
@@ -10,6 +11,7 @@ use log::debug;
 /// This owns all devices, and updates devices with respect to a main clock.
 pub struct Motherboard {
     bios: Rom,
+    ram: Ram,
     memctrl: MemoryController,
     pub cpu: cpu::CpuR3000,
 }
@@ -22,6 +24,7 @@ impl Motherboard {
     pub fn new(bios: Vec<u8>) -> Motherboard {
         return Motherboard {
             bios: Rom::from_buf(bios),
+            ram: Ram::with_size(2 * 1024 * 1024),
             cpu: cpu::CpuR3000::new(),
             memctrl: MemoryController::new(),
         };
@@ -35,7 +38,7 @@ impl BusDevice for Motherboard {
             panic!("Unaligned memory access: ${:08X}", addr);
         }
         match dev {
-            // Device::RAM => {}
+            Device::RAM => self.ram.read32(local_addr),
             // Device::Expansion1 => {}
             // Device::Scratch => {}
             Device::IO => self.memctrl.read32(local_addr),
@@ -55,7 +58,7 @@ impl BusDevice for Motherboard {
             panic!("Unaligned memory access: ${:08X}", addr);
         }
         match dev {
-            // Device::RAM => {}
+            Device::RAM => self.ram.peek32(local_addr),
             // Device::Expansion1 => {}
             // Device::Scratch => {}
             Device::IO => self.memctrl.peek32(local_addr),
@@ -75,7 +78,7 @@ impl BusDevice for Motherboard {
             panic!("Unaligned memory access: ${:08X}", addr);
         }
         match dev {
-            // Device::RAM => {}
+            Device::RAM => self.ram.write32(local_addr, data),
             // Device::Expansion1 => {}
             // Device::Scratch => {}
             Device::IO => self.memctrl.write32(local_addr, data),
