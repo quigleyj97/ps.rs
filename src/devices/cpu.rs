@@ -31,6 +31,17 @@ macro_rules! op_fn {
 pub struct CpuState {
     /// The CPU registers
     registers: [u32; 32],
+    /// The "Load Delay" registers
+    ///
+    /// Due to the pipelined architecture of the MIPS-I, there is a hazard in
+    /// load operations since the data isn't loaded into the register until
+    /// after execution. This means that the next instruction will load the
+    /// previous value of the instruction, _and_ means that instruction will
+    /// "win" if it then tries to write back to that register.
+    ///
+    /// I haven't bothered to emulate the pipeline since I don't see a reason
+    /// to, so this copy of the registers exists to emulate the load delay slot.
+    next_registers: [u32; 32],
     /// The program counter register
     pub pc: u32,
     /// Number of idle cycles to burn to synchronize the CPU with the clock
@@ -45,6 +56,8 @@ pub struct CpuState {
     /// MIPS architecture handles (or more accurately, doesn't handle) branch
     /// hazards in instructions.
     next_instruction: u32,
+    /// A load to execute, if any are pipelined, as a 2-tuple of (reg idx, data)
+    next_load: (usize, u32),
 }
 
 pub const CPU_POWERON_STATE: CpuState = CpuState {
@@ -52,7 +65,9 @@ pub const CPU_POWERON_STATE: CpuState = CpuState {
     pc: 0xBFC0_0000,
     // the rest of this is shooting from the hip
     registers: [0u32; 32],
+    next_registers: [0u32; 32],
     next_instruction: 0x0000_00000,
+    next_load: (0, 0),
     wait: 0,
 };
 
@@ -82,8 +97,8 @@ pub trait WithCpu {
 }
 
 fn write_reg(cpu: &mut CpuR3000, addr: usize, data: u32) {
-    cpu.state.registers[addr] = data;
-    cpu.state.registers[0] = 0; // coerce the 0-register to be 0
+    cpu.state.next_registers[addr] = data;
+    cpu.state.next_registers[0] = 0; // coerce the 0-register to be 0
 }
 
 fn get_reg(cpu: &CpuR3000, addr: usize) -> u32 {
@@ -96,6 +111,10 @@ fn branch(cpu: &mut CpuR3000, offset: u16) {
         .pc
         .wrapping_add(sign_extend!((offset as u32) << 2));
     cpu.state.pc = new_pc - 4; // correct for PC advance
+}
+
+fn read32<T: WithCpu + BusDevice>(mb: &mut T, addr: u32) -> u32 {
+    return mb.read32(addr);
 }
 
 fn write32<T: WithCpu + BusDevice>(mb: &mut T, addr: u32, data: u32) {
@@ -118,9 +137,20 @@ pub fn tick<T: WithCpu>(mb: &mut T) -> bool {
 
 /// Unconditionally advance the state of the CPU
 pub fn exec<T: WithCpu + BusDevice>(mb: &mut T) {
-    let pc = mb.cpu().state.pc;
-    let (mnemonic, instruction) = decode_instruction(mb.cpu().state.next_instruction);
-    mb.cpu_mut().state.next_instruction = mb.read32(pc);
+    let next_instruction = mb.cpu().state.next_instruction;
+    // pre-execution updates
+    {
+        let next_instruction = mb.read32(mb.cpu().state.pc);
+        let cpu = mb.cpu_mut();
+        // advance the PC
+        cpu.state.next_instruction = next_instruction;
+        // execute any pipelined loads
+        let (reg_idx, val) = cpu.state.next_load;
+        cpu.state.registers[reg_idx] = val;
+        cpu.state.next_load = (0, 0);
+    }
+
+    let (mnemonic, instruction) = decode_instruction(next_instruction);
     trace!(target: "cpu", "STEP {:?} 0x{:08X}", mnemonic, *instruction);
     let fn_handler = match_handler::<T>(mnemonic);
     match fn_handler(mb, instruction) {
@@ -131,11 +161,12 @@ pub fn exec<T: WithCpu + BusDevice>(mb: &mut T) {
             todo!("Exception handling via cop0 for exception {:?}", e);
         }
     }
-    // update CPU state
+    // post-execution updates
     {
         let cpu = mb.cpu_mut();
         cpu.cycles += 1;
         cpu.state.pc += 4;
+        cpu.state.registers = cpu.state.next_registers;
     }
 }
 
@@ -175,7 +206,7 @@ fn match_handler<T: WithCpu + BusDevice>(mnemonic: Mnemonic) -> OpcodeHandler<T>
         Mnemonic::LH =>             /*op_lh,*/todo!("instr {:?}", mnemonic),
         Mnemonic::LHU =>            /*op_lhu,*/todo!("instr {:?}", mnemonic),
         Mnemonic::LUI => op_lui,
-        Mnemonic::LW =>             /*op_lw,*/todo!("instr {:?}", mnemonic),
+        Mnemonic::LW => op_lw,
         Mnemonic::LWCz =>           /*op_lwcz,*/todo!("instr {:?}", mnemonic),
         Mnemonic::LWL =>            /*op_lwl,*/todo!("instr {:?}", mnemonic),
         Mnemonic::LWR =>            /*op_lwr,*/todo!("instr {:?}", mnemonic),
@@ -321,6 +352,18 @@ op_fn!(op_lui, (mb, instr), {
     let data = u32::from(instr.immediate()) << 16;
     let cpu = mb.cpu_mut();
     write_reg(cpu, instr.rt() as usize, data);
+    None
+});
+
+op_fn!(op_lw, (mb, instr), {
+    let base = get_reg(mb.cpu(), instr.rs() as usize);
+    let addr = base.wrapping_add(sign_extend!(instr.immediate()));
+    // todo: write errors
+
+    let data = read32(mb, addr);
+
+    write_reg(mb.cpu_mut(), instr.rt() as usize, data);
+
     None
 });
 
