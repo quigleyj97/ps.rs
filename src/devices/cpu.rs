@@ -224,11 +224,11 @@ fn match_handler<T: WithCpu + BusDevice>(mnemonic: Mnemonic) -> OpcodeHandler<T>
         Mnemonic::SB =>             /*op_sb,*/todo!("instr {:?}", mnemonic),
         Mnemonic::SH =>             /*op_sh,*/todo!("instr {:?}", mnemonic),
         Mnemonic::SLL => op_sll,
-        Mnemonic::SLLV =>           /*op_sllv,*/todo!("instr {:?}", mnemonic),
-        Mnemonic::SLT =>            /*op_slt,*/todo!("instr {:?}", mnemonic),
-        Mnemonic::SLTI =>           /*op_slti,*/todo!("instr {:?}", mnemonic),
-        Mnemonic::SLTIU =>          /*op_sltiu,*/todo!("instr {:?}", mnemonic),
-        Mnemonic::SLTU =>           /*op_sltu,*/todo!("instr {:?}", mnemonic),
+        Mnemonic::SLLV => op_sllv,
+        Mnemonic::SLT => op_slt,
+        Mnemonic::SLTI => op_slti,
+        Mnemonic::SLTIU => op_sltiu,
+        Mnemonic::SLTU => op_sltu,
         Mnemonic::SRA =>            /*op_sra,*/todo!("instr {:?}", mnemonic),
         Mnemonic::SRAV =>           /*op_srav,*/todo!("instr {:?}", mnemonic),
         Mnemonic::SRL =>            /*op_srl,*/todo!("instr {:?}", mnemonic),
@@ -410,6 +410,66 @@ op_fn!(op_sll, (mb, instr), {
     let shamt = instr.shamt();
     let cpu = mb.cpu_mut();
     write_reg(cpu, dest, get_reg(cpu, target).wrapping_shl(shamt as u32));
+    None
+});
+
+op_fn!(op_sllv, (mb, instr), {
+    let target = get_reg(mb.cpu(), instr.rt() as usize);
+    let dest = instr.rd() as usize;
+    let shift = get_reg(mb.cpu(), instr.rs() as usize) & 0b0001_1111;
+    write_reg(mb.cpu_mut(), dest, target.wrapping_shl(shift as u32));
+    None
+});
+
+op_fn!(op_slt, (mb, instr), {
+    let target = get_reg(mb.cpu(), instr.rt() as usize);
+    let source = get_reg(mb.cpu(), instr.rs() as usize);
+    write_reg(
+        mb.cpu_mut(),
+        instr.rd() as usize,
+        if (source as i32) < (target as i32) {
+            1
+        } else {
+            0
+        },
+    );
+    None
+});
+
+op_fn!(op_slti, (mb, instr), {
+    let target = sign_extend!(instr.immediate());
+    let source = get_reg(mb.cpu(), instr.rs() as usize);
+    write_reg(
+        mb.cpu_mut(),
+        instr.rt() as usize,
+        if (source as i32) < (target as i32) {
+            1
+        } else {
+            0
+        },
+    );
+    None
+});
+
+op_fn!(op_sltiu, (mb, instr), {
+    let target = sign_extend!(instr.immediate());
+    let source = get_reg(mb.cpu(), instr.rs() as usize);
+    write_reg(
+        mb.cpu_mut(),
+        instr.rt() as usize,
+        if source < target { 1 } else { 0 },
+    );
+    None
+});
+
+op_fn!(op_sltu, (mb, instr), {
+    let target = get_reg(mb.cpu(), instr.rt() as usize);
+    let source = get_reg(mb.cpu(), instr.rs() as usize);
+    write_reg(
+        mb.cpu_mut(),
+        instr.rd() as usize,
+        if source < target { 1 } else { 0 },
+    );
     None
 });
 
