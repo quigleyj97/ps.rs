@@ -1,4 +1,4 @@
-use super::bus::BusDevice;
+use super::bus::{BusDevice, SizedData};
 use log::debug;
 
 const EXP1_BASE_ADDR_PORT: u32 = 0x0;
@@ -26,34 +26,49 @@ impl MemoryController {
 }
 
 impl BusDevice for MemoryController {
-    fn read32(&mut self, addr: u32) -> u32 {
-        // return no-ops for now
-        match addr {
-            EXP1_BASE_ADDR_PORT => 0x1F00_0000,
-            EXP2_BASE_ADDR_PORT => 0x1F80_2000,
-            EXP1_DELAY_PORT | EXP3_DELAY_PORT | BIOS_DELAY_PORT | SPU_DELAY_PORT
-            | CDROM_DELAY_PORT | EXP2_DELAY_PORT | COM_DELAY_PORT => {
-                todo!("Read: Other control ports unimplemented")
-            }
-            _ => panic!("Unsupported memory IO port: ${:08X}", addr),
+    fn read<T: SizedData>(&mut self, addr: u32) -> T {
+        // TODO: bus sizes that aren't 32-bit
+        if T::width() != 4 {
+            todo!("Smaller bus reads in MemoryController");
         }
+        // return no-ops for now
+        T::from_le_byteslice(
+            &(match addr {
+                EXP1_BASE_ADDR_PORT => 0x1F00_0000u32,
+                EXP2_BASE_ADDR_PORT => 0x1F80_2000u32,
+                EXP1_DELAY_PORT | EXP3_DELAY_PORT | BIOS_DELAY_PORT | SPU_DELAY_PORT
+                | CDROM_DELAY_PORT | EXP2_DELAY_PORT | COM_DELAY_PORT => {
+                    todo!("Read: Other control ports unimplemented")
+                }
+                _ => panic!("Unsupported memory IO port: ${:08X}", addr),
+            })
+            .to_le_bytes(),
+        )
     }
-    fn peek32(&self, addr: u32) -> Option<u32> {
-        Some(match addr {
-            EXP1_BASE_ADDR_PORT => 0x1F00_0000,
-            EXP2_BASE_ADDR_PORT => 0x1F80_2000,
-            _ => todo!("Peek: Other control ports unimplemented"),
-        })
+
+    fn peek<T: SizedData>(&self, addr: u32) -> Option<T> {
+        if T::width() != 4 {
+            todo!("Smaller bus reads in MemoryController");
+        }
+        Some(T::from_le_byteslice(
+            &(match addr {
+                EXP1_BASE_ADDR_PORT => 0x1F00_0000u32,
+                EXP2_BASE_ADDR_PORT => 0x1F80_2000u32,
+                _ => todo!("Peek: Other control ports unimplemented"),
+            })
+            .to_le_bytes(),
+        ))
     }
-    fn write32(&mut self, addr: u32, data: u32) {
+
+    fn write<T: SizedData>(&mut self, addr: u32, data: T) {
         match addr {
             EXP1_BASE_ADDR_PORT => {
-                if data != 0x1F00_0000 {
+                if data != T::from_u32(0x1F00_0000) {
                     panic!("Attempt to change EXP1 base address!")
                 }
             }
             EXP2_BASE_ADDR_PORT => {
-                if data != 0x1F80_2000 {
+                if data != T::from_u32(0x1F80_2000) {
                     panic!("Attempt to change EXP1 base address!")
                 }
             }

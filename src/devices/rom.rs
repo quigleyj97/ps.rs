@@ -1,4 +1,4 @@
-use crate::devices::bus::BusDevice;
+use crate::devices::bus::{BusDevice, SizedData};
 
 /// A read-only region of memory
 pub struct Rom {
@@ -10,27 +10,22 @@ impl Rom {
         return Rom { buf };
     }
 
-    fn read(&self, addr: usize) -> u32 {
-        let b0 = self.buf[addr + 0] as u32;
-        let b1 = self.buf[addr + 1] as u32;
-        let b2 = self.buf[addr + 2] as u32;
-        let b3 = self.buf[addr + 3] as u32;
-
-        return b0 | (b1 << 8) | (b2 << 16) | (b3 << 24);
+    fn read_buf<T: SizedData>(&self, addr: usize) -> T {
+        return T::from_le_byteslice(&self.buf[addr..(addr + T::width())]);
     }
 }
 
 impl BusDevice for Rom {
-    fn peek32(&self, addr: u32) -> Option<u32> {
+    fn peek<T: SizedData>(&self, addr: u32) -> Option<T> {
         // cast addr to usize, then read from buffer
-        return Some(self.read(addr as usize));
+        return Some(self.read_buf::<T>(addr as usize));
     }
 
-    fn read32(&mut self, addr: u32) -> u32 {
-        return self.read(addr as usize);
+    fn read<T: SizedData>(&mut self, addr: u32) -> T {
+        return self.read_buf::<T>(addr as usize);
     }
 
-    fn write32(&mut self, _addr: u32, _data: u32) {
+    fn write<T: SizedData>(&mut self, _addr: u32, _data: T) {
         // no-op
     }
 }

@@ -1,4 +1,4 @@
-use crate::devices::bus::BusDevice;
+use crate::devices::bus::{BusDevice, SizedData};
 use crate::devices::cop0::Cop0;
 use crate::utils::cpustructs::{Exception, Instruction, Mnemonic};
 use crate::utils::decode::decode_instruction;
@@ -113,16 +113,16 @@ fn branch(cpu: &mut CpuR3000, offset: u16) {
     cpu.state.pc = new_pc - 4; // correct for PC advance
 }
 
-fn read32<T: WithCpu + BusDevice>(mb: &mut T, addr: u32) -> u32 {
-    return mb.read32(addr);
+fn read32<T: WithCpu + BusDevice, D: SizedData>(mb: &mut T, addr: u32) -> D {
+    return mb.read::<D>(addr);
 }
 
-fn write32<T: WithCpu + BusDevice>(mb: &mut T, addr: u32, data: u32) {
+fn write<T: WithCpu + BusDevice, D: SizedData>(mb: &mut T, addr: u32, data: D) {
     if mb.cpu().cop0.is_cache_isolated() {
         debug!(target: "cpu", "Cache isolation active, but cache is unimplemented");
         return;
     }
-    return mb.write32(addr, data);
+    return mb.write(addr, data);
 }
 
 /// Burn cycles if the CPU needs to wait, and return whether the CPU is in sync
@@ -140,7 +140,7 @@ pub fn exec<T: WithCpu + BusDevice>(mb: &mut T) {
     let next_instruction = mb.cpu().state.next_instruction;
     // pre-execution updates
     {
-        let next_instruction = mb.read32(mb.cpu().state.pc);
+        let next_instruction = mb.read::<u32>(mb.cpu().state.pc);
         let cpu = mb.cpu_mut();
         // advance the PC
         cpu.state.next_instruction = next_instruction;
@@ -483,7 +483,7 @@ op_fn!(op_sw, (mb, instr), {
     // TODO: TLB refill/invalid/modified exceptions
     // TODO: Bus errors
     // TODO: Address errors
-    write32(mb, addr, get_reg(mb.cpu(), target));
+    write(mb, addr, get_reg(mb.cpu(), target));
     None
 });
 

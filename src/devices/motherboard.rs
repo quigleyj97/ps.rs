@@ -1,4 +1,4 @@
-use crate::devices::bus::BusDevice;
+use crate::devices::bus::{BusDevice, SizedData};
 use crate::devices::cpu;
 use crate::devices::memctrl::MemoryController;
 use crate::devices::ram::Ram;
@@ -32,19 +32,19 @@ impl Motherboard {
 }
 
 impl BusDevice for Motherboard {
-    fn read32(&mut self, addr: u32) -> u32 {
+    fn read<T: SizedData>(&mut self, addr: u32) -> T {
         let (_seg, dev, local_addr) = map_device(addr);
-        if addr % 4 != 0 {
+        if !T::is_aligned(addr) {
             panic!("Unaligned memory access: ${:08X}", addr);
         }
         match dev {
-            Device::RAM => self.ram.read32(local_addr),
+            Device::RAM => self.ram.read::<T>(local_addr),
             // Device::Expansion1 => {}
             // Device::Scratch => {}
-            Device::IO => self.memctrl.read32(local_addr),
+            Device::IO => self.memctrl.read::<T>(local_addr),
             // Device::Expansion2 => {}
             // Device::Expansion3 => {}
-            Device::BIOS => self.bios.read32(local_addr),
+            Device::BIOS => self.bios.read::<T>(local_addr),
             _ => panic!("Unmapped memory: ${:08X}", addr),
             // Device::IOCacheControl => {}
             // Device::None => {}
@@ -52,19 +52,19 @@ impl BusDevice for Motherboard {
         }
     }
 
-    fn peek32(&self, addr: u32) -> Option<u32> {
+    fn peek<T: SizedData>(&self, addr: u32) -> Option<T> {
         let (_seg, dev, local_addr) = map_device(addr);
-        if addr % 4 != 0 {
+        if !T::is_aligned(addr) {
             panic!("Unaligned memory access: ${:08X}", addr);
         }
         match dev {
-            Device::RAM => self.ram.peek32(local_addr),
+            Device::RAM => self.ram.peek::<T>(local_addr),
             // Device::Expansion1 => {}
             // Device::Scratch => {}
-            Device::IO => self.memctrl.peek32(local_addr),
+            Device::IO => self.memctrl.peek::<T>(local_addr),
             // Device::Expansion2 => {}
             // Device::Expansion3 => {}
-            Device::BIOS => self.bios.peek32(local_addr),
+            Device::BIOS => self.bios.peek::<T>(local_addr),
             _ => None,
             // Device::IOCacheControl => {}
             // Device::None => {}
@@ -72,16 +72,16 @@ impl BusDevice for Motherboard {
         }
     }
 
-    fn write32(&mut self, addr: u32, data: u32) {
+    fn write<T: SizedData>(&mut self, addr: u32, data: T) {
         let (_seg, dev, local_addr) = map_device(addr);
-        if addr % 4 != 0 {
+        if !T::is_aligned(addr) {
             panic!("Unaligned memory access: ${:08X}", addr);
         }
         match dev {
-            Device::RAM => self.ram.write32(local_addr, data),
+            Device::RAM => self.ram.write(local_addr, data),
             // Device::Expansion1 => {}
             // Device::Scratch => {}
-            Device::IO => self.memctrl.write32(local_addr, data),
+            Device::IO => self.memctrl.write(local_addr, data),
             // Device::Expansion2 => {}
             // Device::Expansion3 => {}
             Device::BIOS => panic!(
