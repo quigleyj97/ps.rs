@@ -2,6 +2,7 @@ use crate::devices::bus::{BusDevice, SizedData};
 use crate::devices::cop0::Cop0;
 use crate::utils::cpustructs::{Exception, Instruction, Mnemonic};
 use crate::utils::decode::decode_instruction;
+use crate::utils::disasm::disasm_instr;
 use log::{debug, trace};
 
 macro_rules! sign_extend {
@@ -113,7 +114,7 @@ fn branch(cpu: &mut CpuR3000, offset: u16) {
     cpu.state.pc = new_pc - 4; // correct for PC advance
 }
 
-fn read32<T: WithCpu + BusDevice, D: SizedData>(mb: &mut T, addr: u32) -> D {
+fn read<T: WithCpu + BusDevice, D: SizedData>(mb: &mut T, addr: u32) -> D {
     return mb.read::<D>(addr);
 }
 
@@ -151,7 +152,7 @@ pub fn exec<T: WithCpu + BusDevice>(mb: &mut T) {
     }
 
     let (mnemonic, instruction) = decode_instruction(next_instruction);
-    trace!(target: "cpu", "STEP {:?} 0x{:08X}", mnemonic, *instruction);
+    trace!(target: "cpu", "STEP {}", disasm_instr(mnemonic, instruction));
     let fn_handler = match_handler::<T>(mnemonic);
     match fn_handler(mb, instruction) {
         None => {} // do nothing- operation completed successfully
@@ -198,13 +199,13 @@ fn match_handler<T: WithCpu + BusDevice>(mnemonic: Mnemonic) -> OpcodeHandler<T>
         Mnemonic::DIV =>            /*op_div,*/todo!("instr {:?}", mnemonic),
         Mnemonic::DIVU =>           /*op_divu,*/todo!("instr {:?}", mnemonic),
         Mnemonic::J => op_j,
-        Mnemonic::JAL =>            /*op_jal,*/todo!("instr {:?}", mnemonic),
-        Mnemonic::JALR =>           /*op_jalr,*/todo!("instr {:?}", mnemonic),
-        Mnemonic::JR =>             /*op_jr,*/todo!("instr {:?}", mnemonic),
-        Mnemonic::LB =>             /*op_lb,*/todo!("instr {:?}", mnemonic),
-        Mnemonic::LBU =>            /*op_lbu,*/todo!("instr {:?}", mnemonic),
-        Mnemonic::LH =>             /*op_lh,*/todo!("instr {:?}", mnemonic),
-        Mnemonic::LHU =>            /*op_lhu,*/todo!("instr {:?}", mnemonic),
+        Mnemonic::JAL => op_jal,
+        Mnemonic::JALR => op_jalr,
+        Mnemonic::JR => op_jr,
+        Mnemonic::LB => op_lb,
+        Mnemonic::LBU => op_lbu,
+        Mnemonic::LH => op_lh,
+        Mnemonic::LHU => op_lhu,
         Mnemonic::LUI => op_lui,
         Mnemonic::LW => op_lw,
         Mnemonic::LWCz =>           /*op_lwcz,*/todo!("instr {:?}", mnemonic),
@@ -346,7 +347,68 @@ op_fn!(op_j, (mb, instr), {
     None
 });
 
-// skip
+op_fn!(op_jal, (mb, instr), {
+    // 31 = RA register
+    let pc = mb.cpu().state.pc;
+    write_reg(mb.cpu_mut(), 31, pc);
+    // re-use the J op
+    op_j(mb, instr)
+});
+
+op_fn!(op_jalr, (mb, instr), {
+    // 31 = RA register
+    let pc = mb.cpu().state.pc;
+    write_reg(mb.cpu_mut(), 31, pc);
+    let jmp_to = get_reg(mb.cpu(), instr.rs() as usize);
+    mb.cpu_mut().state.pc = jmp_to;
+    None
+});
+
+op_fn!(op_jr, (mb, instr), {
+    let jmp_to = get_reg(mb.cpu(), instr.rs() as usize);
+    mb.cpu_mut().state.pc = jmp_to;
+    None
+});
+
+op_fn!(op_lb, (mb, instr), {
+    let base = get_reg(mb.cpu(), instr.rs() as usize);
+    let addr = base.wrapping_add(sign_extend!(instr.immediate()));
+    // todo: read errors
+    let data = read::<T, u8>(mb, addr) as i8;
+
+    mb.cpu_mut().state.next_load = (instr.rt() as usize, data as u32);
+    None
+});
+
+op_fn!(op_lbu, (mb, instr), {
+    let base = get_reg(mb.cpu(), instr.rs() as usize);
+    let addr = base.wrapping_add(sign_extend!(instr.immediate()));
+    // todo: read errors
+    let data = read::<T, u8>(mb, addr) as u8;
+
+    mb.cpu_mut().state.next_load = (instr.rt() as usize, data as u32);
+    None
+});
+
+op_fn!(op_lh, (mb, instr), {
+    let base = get_reg(mb.cpu(), instr.rs() as usize);
+    let addr = base.wrapping_add(sign_extend!(instr.immediate()));
+    // todo: read errors
+    let data = read::<T, u8>(mb, addr) as i16;
+
+    mb.cpu_mut().state.next_load = (instr.rt() as usize, data as u32);
+    None
+});
+
+op_fn!(op_lhu, (mb, instr), {
+    let base = get_reg(mb.cpu(), instr.rs() as usize);
+    let addr = base.wrapping_add(sign_extend!(instr.immediate()));
+    // todo: read errors
+    let data = read::<T, u8>(mb, addr) as u16;
+
+    mb.cpu_mut().state.next_load = (instr.rt() as usize, data as u32);
+    None
+});
 
 op_fn!(op_lui, (mb, instr), {
     let data = u32::from(instr.immediate()) << 16;
@@ -358,11 +420,11 @@ op_fn!(op_lui, (mb, instr), {
 op_fn!(op_lw, (mb, instr), {
     let base = get_reg(mb.cpu(), instr.rs() as usize);
     let addr = base.wrapping_add(sign_extend!(instr.immediate()));
-    // todo: write errors
+    // todo: read errors
 
-    let data = read32(mb, addr);
+    let data = read(mb, addr);
 
-    write_reg(mb.cpu_mut(), instr.rt() as usize, data);
+    mb.cpu_mut().state.next_load = (instr.rt() as usize, data);
 
     None
 });
