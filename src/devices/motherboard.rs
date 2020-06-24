@@ -41,7 +41,11 @@ impl BusDevice for Motherboard {
             Device::RAM => self.ram.read::<T>(local_addr),
             // Device::Expansion1 => {}
             // Device::Scratch => {}
-            Device::IO => self.memctrl.read::<T>(local_addr),
+            Device::MemCtrl => self.memctrl.read::<T>(local_addr),
+            Device::SPU => {
+                debug!("Attempt to read from SPU, ignoring for now");
+                T::from_u32(0)
+            }
             // Device::Expansion2 => {}
             // Device::Expansion3 => {}
             Device::BIOS => self.bios.read::<T>(local_addr),
@@ -61,7 +65,11 @@ impl BusDevice for Motherboard {
             Device::RAM => self.ram.peek::<T>(local_addr),
             // Device::Expansion1 => {}
             // Device::Scratch => {}
-            Device::IO => self.memctrl.peek::<T>(local_addr),
+            Device::MemCtrl => self.memctrl.peek::<T>(local_addr),
+            Device::SPU => {
+                debug!("Attempt to peek from SPU, ignoring for now");
+                Some(T::from_u32(0))
+            }
             // Device::Expansion2 => {}
             // Device::Expansion3 => {}
             Device::BIOS => self.bios.peek::<T>(local_addr),
@@ -81,7 +89,10 @@ impl BusDevice for Motherboard {
             Device::RAM => self.ram.write(local_addr, data),
             // Device::Expansion1 => {}
             // Device::Scratch => {}
-            Device::IO => self.memctrl.write(local_addr, data),
+            Device::MemCtrl => self.memctrl.write(local_addr, data),
+            Device::SPU => {
+                debug!(target: "mb", "Attempt to write to SPU, but SPU is unimplemented: ${:08X} = 0x{:08X}", addr, data)
+            }
             // Device::Expansion2 => {}
             // Device::Expansion3 => {}
             Device::BIOS => panic!(

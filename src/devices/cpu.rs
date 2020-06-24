@@ -221,8 +221,8 @@ fn match_handler<T: WithCpu + BusDevice>(mnemonic: Mnemonic) -> OpcodeHandler<T>
         Mnemonic::NOR =>            /*op_nor,*/todo!("instr {:?}", mnemonic),
         Mnemonic::OR => op_or,
         Mnemonic::ORI => op_ori,
-        Mnemonic::SB =>             /*op_sb,*/todo!("instr {:?}", mnemonic),
-        Mnemonic::SH =>             /*op_sh,*/todo!("instr {:?}", mnemonic),
+        Mnemonic::SB => op_sb,
+        Mnemonic::SH => op_sh,
         Mnemonic::SLL => op_sll,
         Mnemonic::SLLV => op_sllv,
         Mnemonic::SLT => op_slt,
@@ -402,7 +402,25 @@ op_fn!(op_ori, (mb, instr), {
     None
 });
 
-// skip
+op_fn!(op_sb, (mb, instr), {
+    let base = instr.rs() as usize;
+    let target = instr.rt() as usize;
+    let data = sign_extend!(instr.immediate());
+    let addr = mb.cpu().state.registers[base] + data;
+    write(mb, addr, (get_reg(mb.cpu(), target) & 0xFF) as u8);
+    // todo: addr, bus, TLB exceptions
+    None
+});
+
+op_fn!(op_sh, (mb, instr), {
+    let base = instr.rs() as usize;
+    let target = instr.rt() as usize;
+    let data = sign_extend!(instr.immediate());
+    let addr = mb.cpu().state.registers[base] + data;
+    write(mb, addr, (get_reg(mb.cpu(), target) & 0xFFFF) as u16);
+    // todo: addr, bus, TLB exceptions
+    None
+});
 
 op_fn!(op_sll, (mb, instr), {
     let target = instr.rt() as usize;

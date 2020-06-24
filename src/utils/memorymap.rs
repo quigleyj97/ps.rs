@@ -16,8 +16,10 @@ pub enum Device {
     Expansion1,
     /// Scratchpad/fast data cache
     Scratch,
-    /// IO ports
-    IO,
+    /// The memory control registers
+    MemCtrl,
+    /// The Sound Processing Unit
+    SPU,
     /// The second expansion area
     Expansion2,
     /// The third expansion area
@@ -55,14 +57,15 @@ const KSEG2_RANGE: Range = Range::new(0xC000_0000, 0x4000_0000);
 
 //#region Device map consts
 
-// These values come from No$Psx, so the device descriptions may not be correct.
-// If that's the case I'll rename the devices in the enums (if I remember to do
-// that).
+// These values come from No$Psx and Rustation, so the device descriptions may
+// not be correct.
 
 const RAM_RANGE: Range = Range::new(0x0000_0000, 2048 * 1024);
 const EXP1_RANGE: Range = Range::new(0x0F00_0000, 8192 * 1024);
 const SCRATCH_RANGE: Range = Range::new(0x0F80_0000, 1024);
-const IO_RANGE: Range = Range::new(0x0F80_1000, 2 * 1024); // deviating from no$psx here
+const MEM_CTRL_RANGE: Range = Range::new(0x0F80_1000, 3072); // TODO: this is supposed to be much smaller
+                                                             // the BIOS writes to 0x1F80_1060 for some reason, but it doesn't look to do anything...
+const SPU_RANGE: Range = Range::new(0x0F80_1c00, 640);
 const EXP2_RANGE: Range = Range::new(0x0F80_2000, 8 * 1024);
 const EXP3_RANGE: Range = Range::new(0x0FA0_0000, 2048 * 1024);
 const BIOS_RANGE: Range = Range::new(0x0FC0_0000, 512 * 1024);
@@ -108,8 +111,10 @@ pub fn map_device(addr: u32) -> (Segment, Device, u32) {
             && segment != Segment::KSEG1
         {
             (Device::Scratch, seg_local_addr - SCRATCH_RANGE.start)
-        } else if seg_local_addr >= IO_RANGE.start && seg_local_addr < IO_RANGE.end {
-            (Device::IO, seg_local_addr - IO_RANGE.start)
+        } else if seg_local_addr >= MEM_CTRL_RANGE.start && seg_local_addr < MEM_CTRL_RANGE.end {
+            (Device::MemCtrl, seg_local_addr - MEM_CTRL_RANGE.start)
+        } else if seg_local_addr >= SPU_RANGE.start && seg_local_addr < SPU_RANGE.end {
+            (Device::SPU, seg_local_addr - SPU_RANGE.start)
         } else if seg_local_addr >= EXP2_RANGE.start && seg_local_addr < EXP2_RANGE.end {
             (Device::Expansion2, seg_local_addr - EXP2_RANGE.start)
         } else if seg_local_addr >= EXP3_RANGE.start && seg_local_addr < EXP3_RANGE.end {
