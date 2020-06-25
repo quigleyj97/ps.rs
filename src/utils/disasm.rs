@@ -121,11 +121,11 @@ pub fn disasm_instr(mnemonic: Mnemonic, instr: Instruction) -> String {
 
 fn disasm_i_instr(mnemonic: Mnemonic, instr: Instruction) -> String {
     format!(
-        "{:?} ${}, ${}, 0x{:04X}",
+        "{:?} ${}, ${}, {}",
         mnemonic,
         instr.rt(),
         instr.rs(),
-        instr.immediate()
+        instr.immediate() as i16
     )
 }
 
@@ -159,10 +159,10 @@ fn disasm_bare_instr(mnemonic: Mnemonic) -> String {
 
 fn disasm_bus_instr(mnemonic: Mnemonic, instr: Instruction) -> String {
     format!(
-        "{:?} ${}, 0x{:04X}(${})",
+        "{:?} ${}, {}(${})",
         mnemonic,
         instr.rt(),
-        instr.immediate(),
+        instr.immediate() as i16,
         instr.rs()
     )
 }
