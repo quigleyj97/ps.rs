@@ -7,7 +7,7 @@ use log::{debug, trace};
 
 macro_rules! sign_extend {
     ($val: expr) => {{
-        (i32::from($val as i16) as u32)
+        (($val as i16) as u32)
     }};
 }
 
@@ -32,17 +32,6 @@ macro_rules! op_fn {
 pub struct CpuState {
     /// The CPU registers
     registers: [u32; 32],
-    /// The "Load Delay" registers
-    ///
-    /// Due to the pipelined architecture of the MIPS-I, there is a hazard in
-    /// load operations since the data isn't loaded into the register until
-    /// after execution. This means that the next instruction will load the
-    /// previous value of the instruction, _and_ means that instruction will
-    /// "win" if it then tries to write back to that register.
-    ///
-    /// I haven't bothered to emulate the pipeline since I don't see a reason
-    /// to, so this copy of the registers exists to emulate the load delay slot.
-    next_registers: [u32; 32],
     /// The program counter register
     pub pc: u32,
     /// Number of idle cycles to burn to synchronize the CPU with the clock
@@ -51,12 +40,12 @@ pub struct CpuState {
     /// which represent how many cycles the CPU will be blocked executing that
     /// read.
     pub wait: u32,
-    /// The next instruction to execute in the pipeline, as a word
+    /// The next instruction in the pipeline, as 2-tuple of word and address
     ///
     /// This is implemented to simulate delay slots, which occur due to how the
     /// MIPS architecture handles (or more accurately, doesn't handle) branch
     /// hazards in instructions.
-    next_instruction: u32,
+    next_instruction: (u32, u32),
     /// A load to execute, if any are pipelined, as a 2-tuple of (reg idx, data)
     next_load: (usize, u32),
 }
@@ -66,8 +55,7 @@ pub const CPU_POWERON_STATE: CpuState = CpuState {
     pc: 0xBFC0_0000,
     // the rest of this is shooting from the hip
     registers: [0u32; 32],
-    next_registers: [0u32; 32],
-    next_instruction: 0x0000_00000,
+    next_instruction: (0x0000_00000, 0x0),
     next_load: (0, 0),
     wait: 0,
 };
@@ -98,8 +86,8 @@ pub trait WithCpu {
 }
 
 fn write_reg(cpu: &mut CpuR3000, addr: usize, data: u32) {
-    cpu.state.next_registers[addr] = data;
-    cpu.state.next_registers[0] = 0; // coerce the 0-register to be 0
+    cpu.state.registers[addr] = data;
+    cpu.state.registers[0] = 0;
 }
 
 fn get_reg(cpu: &CpuR3000, addr: usize) -> u32 {
@@ -138,21 +126,22 @@ pub fn tick<T: WithCpu>(mb: &mut T) -> bool {
 
 /// Unconditionally advance the state of the CPU
 pub fn exec<T: WithCpu + BusDevice>(mb: &mut T) {
-    let next_instruction = mb.cpu().state.next_instruction;
+    let (cur_instruction, cur_pc) = mb.cpu().state.next_instruction;
+    let next_pc = mb.cpu().state.pc;
     // pre-execution updates
     {
-        let next_instruction = mb.read::<u32>(mb.cpu().state.pc);
+        let next_instruction = mb.read::<u32>(next_pc);
         let cpu = mb.cpu_mut();
         // advance the PC
-        cpu.state.next_instruction = next_instruction;
+        cpu.state.next_instruction = (next_instruction, next_pc);
         // execute any pipelined loads
         let (reg_idx, val) = cpu.state.next_load;
         cpu.state.registers[reg_idx] = val;
         cpu.state.next_load = (0, 0);
     }
 
-    let (mnemonic, instruction) = decode_instruction(next_instruction);
-    trace!(target: "cpu", "STEP {}", disasm_instr(mnemonic, instruction));
+    let (mnemonic, instruction) = decode_instruction(cur_instruction);
+    trace!(target: "cpu", "STEP ${:08X} 0x{:08X} SP={:08X} RA={:08X} {}", cur_pc, *instruction, mb.cpu().state.registers[29],mb.cpu().state.registers[31], disasm_instr(mnemonic, instruction));
     let fn_handler = match_handler::<T>(mnemonic);
     match fn_handler(mb, instruction) {
         None => {} // do nothing- operation completed successfully
@@ -167,7 +156,6 @@ pub fn exec<T: WithCpu + BusDevice>(mb: &mut T) {
         let cpu = mb.cpu_mut();
         cpu.cycles += 1;
         cpu.state.pc += 4;
-        cpu.state.registers = cpu.state.next_registers;
     }
 }
 
