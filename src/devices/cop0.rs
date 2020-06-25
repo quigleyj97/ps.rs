@@ -70,4 +70,12 @@ impl Cop0 {
             _ => todo!("MTC0 for register {} = 0x{:08X}", regidx, data),
         }
     }
+
+    pub fn mfc(&mut self, regidx: usize) -> u32 {
+        match regidx {
+            SR_IDX => self.sr,
+            CAUSE_IDX => panic!("Read from CAUSE register"),
+            _ => todo!("Unhandled read from cop0 {} register", regidx),
+        }
+    }
 }

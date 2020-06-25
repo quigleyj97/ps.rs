@@ -39,7 +39,13 @@ impl BusDevice for Motherboard {
         }
         match dev {
             Device::RAM => self.ram.read::<T>(local_addr),
-            // Device::Expansion1 => {}
+            Device::Expansion1 => {
+                // This is the parallel port out the back, which is nominally
+                // unplugged. Mednafen and Rustation return all ones here,
+                // suggesting that the hardware uses internal pullup resistors
+                debug!(target: "cpu", "Attempt to read from parallel port, ignoring");
+                T::from_u32(0)
+            }
             // Device::Scratch => {}
             Device::MemCtrl => self.memctrl.read::<T>(local_addr),
             Device::SPU => {

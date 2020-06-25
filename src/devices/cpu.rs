@@ -199,7 +199,7 @@ fn match_handler<T: WithCpu + BusDevice>(mnemonic: Mnemonic) -> OpcodeHandler<T>
         Mnemonic::LWCz =>           /*op_lwcz,*/todo!("instr {:?}", mnemonic),
         Mnemonic::LWL =>            /*op_lwl,*/todo!("instr {:?}", mnemonic),
         Mnemonic::LWR =>            /*op_lwr,*/todo!("instr {:?}", mnemonic),
-        Mnemonic::MFCz =>           /*op_mfcz,*/todo!("instr {:?}", mnemonic),
+        Mnemonic::MFCz => op_mfcz,
         Mnemonic::MFHI =>           /*op_mfhi,*/todo!("instr {:?}", mnemonic),
         Mnemonic::MFLO =>           /*op_mflo,*/todo!("instr {:?}", mnemonic),
         Mnemonic::MTCz => op_mtcz,
@@ -348,13 +348,13 @@ op_fn!(op_jalr, (mb, instr), {
     let pc = mb.cpu().state.pc;
     write_reg(mb.cpu_mut(), 31, pc);
     let jmp_to = get_reg(mb.cpu(), instr.rs() as usize);
-    mb.cpu_mut().state.pc = jmp_to;
+    mb.cpu_mut().state.pc = jmp_to - 4; //correct for PC advance
     None
 });
 
 op_fn!(op_jr, (mb, instr), {
     let jmp_to = get_reg(mb.cpu(), instr.rs() as usize);
-    mb.cpu_mut().state.pc = jmp_to;
+    mb.cpu_mut().state.pc = jmp_to - 4; //correct for PC advance
     None
 });
 
@@ -419,6 +419,21 @@ op_fn!(op_lw, (mb, instr), {
 
 // skip
 
+op_fn!(op_mfcz, (mb, instr), {
+    let coproc = instr.op() & 0b11;
+    match coproc {
+        0 => {
+            let data = mb.cpu_mut().cop0.mfc(instr.rd() as usize);
+            mb.cpu_mut().state.next_load = (instr.rt() as usize, data);
+            None
+        }
+        // TODO: Cop2 is the GTE
+        _ => Some(Exception::CoprocessorUnusable),
+    }
+});
+
+// skip
+
 op_fn!(op_mtcz, (mb, instr), {
     let coproc = instr.op() & 0b11;
     let data = get_reg(mb.cpu(), instr.rt() as usize);
@@ -456,7 +471,7 @@ op_fn!(op_sb, (mb, instr), {
     let base = instr.rs() as usize;
     let target = instr.rt() as usize;
     let data = sign_extend!(instr.immediate());
-    let addr = mb.cpu().state.registers[base] + data;
+    let addr = mb.cpu().state.registers[base].wrapping_add(data);
     write(mb, addr, (get_reg(mb.cpu(), target) & 0xFF) as u8);
     // todo: addr, bus, TLB exceptions
     None
@@ -466,7 +481,7 @@ op_fn!(op_sh, (mb, instr), {
     let base = instr.rs() as usize;
     let target = instr.rt() as usize;
     let data = sign_extend!(instr.immediate());
-    let addr = mb.cpu().state.registers[base] + data;
+    let addr = mb.cpu().state.registers[base].wrapping_add(data);
     write(mb, addr, (get_reg(mb.cpu(), target) & 0xFFFF) as u16);
     // todo: addr, bus, TLB exceptions
     None
@@ -547,7 +562,7 @@ op_fn!(op_sw, (mb, instr), {
     let base = instr.rs() as usize;
     let target = instr.rt() as usize;
     let data = sign_extend!(instr.immediate());
-    let addr = mb.cpu().state.registers[base] + data;
+    let addr = mb.cpu().state.registers[base].wrapping_add(data);
     // TODO: TLB refill/invalid/modified exceptions
     // TODO: Bus errors
     // TODO: Address errors
