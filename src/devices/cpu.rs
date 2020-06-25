@@ -173,12 +173,12 @@ fn match_handler<T: WithCpu + BusDevice>(mnemonic: Mnemonic) -> OpcodeHandler<T>
         Mnemonic::AND => op_and,
         Mnemonic::ANDI => op_andi,
         Mnemonic::BEQ => op_beq,
-        Mnemonic::BGEZ =>           /*op_bgez,*/todo!("instr {:?}", mnemonic),
-        Mnemonic::BGEZAL =>         /*op_bgezal,*/todo!("instr {:?}", mnemonic),
-        Mnemonic::BGTZ =>           /*op_bgtz,*/todo!("instr {:?}", mnemonic),
-        Mnemonic::BLEZ =>           /*op_blez,*/todo!("instr {:?}", mnemonic),
-        Mnemonic::BLTZ =>           /*op_bltz,*/todo!("instr {:?}", mnemonic),
-        Mnemonic::BLTZAL =>         /*op_bltzal,*/todo!("instr {:?}", mnemonic),
+        Mnemonic::BGEZ => op_bgez,
+        Mnemonic::BGEZAL => op_bgezal,
+        Mnemonic::BGTZ => op_bgtz,
+        Mnemonic::BLEZ => op_blez,
+        Mnemonic::BLTZ => op_bltz,
+        Mnemonic::BLTZAL => op_bltzal,
         Mnemonic::BNE => op_bne,
         Mnemonic::BREAK =>          /*op_break,*/todo!("instr {:?}", mnemonic),
         Mnemonic::CFCz =>           /*op_cfcz,*/todo!("instr {:?}", mnemonic),
@@ -315,7 +315,57 @@ op_fn!(op_beq, (mb, instr), {
     None
 });
 
-// skip
+op_fn!(op_bgez, (mb, instr), {
+    let source = instr.rs() as usize;
+    if (get_reg(mb.cpu(), source) as i32) >= 0 {
+        branch(mb.cpu_mut(), instr.immediate());
+    }
+    None
+});
+
+op_fn!(op_bgezal, (mb, instr), {
+    let source = instr.rs() as usize;
+    let pc = mb.cpu().state.pc;
+    write_reg(mb.cpu_mut(), 31, pc);
+    if (get_reg(mb.cpu(), source) as i32) >= 0 {
+        branch(mb.cpu_mut(), instr.immediate());
+    }
+    None
+});
+
+op_fn!(op_bgtz, (mb, instr), {
+    let source = instr.rs() as usize;
+    if (get_reg(mb.cpu(), source) as i32) > 0 {
+        branch(mb.cpu_mut(), instr.immediate());
+    }
+    None
+});
+
+op_fn!(op_blez, (mb, instr), {
+    let source = instr.rs() as usize;
+    if (get_reg(mb.cpu(), source) as i32) <= 0 {
+        branch(mb.cpu_mut(), instr.immediate());
+    }
+    None
+});
+
+op_fn!(op_bltz, (mb, instr), {
+    let source = instr.rs() as usize;
+    if (get_reg(mb.cpu(), source) as i32) < 0 {
+        branch(mb.cpu_mut(), instr.immediate());
+    }
+    None
+});
+
+op_fn!(op_bltzal, (mb, instr), {
+    let source = instr.rs() as usize;
+    let pc = mb.cpu().state.pc;
+    write_reg(mb.cpu_mut(), 31, pc);
+    if (get_reg(mb.cpu(), source) as i32) < 0 {
+        branch(mb.cpu_mut(), instr.immediate());
+    }
+    None
+});
 
 op_fn!(op_bne, (mb, instr), {
     let source = instr.rs() as usize;
