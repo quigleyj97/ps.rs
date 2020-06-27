@@ -4,5 +4,12 @@
 /bios
 /cds
 
+# Some scripts I've written to help debugging, these are highly subject to
+# Works On My Machine (tm) and aren't important
+/bin
+
+# Logs can get quite huge, don't include those either
+/logs
+
 # Platform garbase
 .DS_Store

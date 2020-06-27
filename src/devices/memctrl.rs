@@ -11,6 +11,10 @@ const CDROM_DELAY_PORT: u32 = 0x18;
 const EXP2_DELAY_PORT: u32 = 0x1C;
 const COM_DELAY_PORT: u32 = 0x20;
 
+// todo: I want to move these into a separate interrupt controller module
+const I_STAT_PORT: u32 = 0x70;
+const I_MASK_PORT: u32 = 0x74;
+
 /// Interface for setting MMC parameters and read delay timings.
 ///
 /// The PSX doesn't actually have a proper MMC, so writes to the BASE_ADDR ports
@@ -39,6 +43,10 @@ impl BusDevice for MemoryController {
                 EXP1_DELAY_PORT | EXP3_DELAY_PORT | BIOS_DELAY_PORT | SPU_DELAY_PORT
                 | CDROM_DELAY_PORT | EXP2_DELAY_PORT | COM_DELAY_PORT => {
                     todo!("Read: Other control ports unimplemented")
+                }
+                I_MASK_PORT | I_STAT_PORT => {
+                    debug!(target: "memctrl", "Interrupts unimplemented, returning 0");
+                    0
                 }
                 _ => panic!("Unsupported memory IO port: ${:08X}", addr),
             })
@@ -71,6 +79,12 @@ impl BusDevice for MemoryController {
                 if data != T::from_u32(0x1F80_2000) {
                     panic!("Attempt to change EXP1 base address!")
                 }
+            }
+            I_MASK_PORT => {
+                if data != T::from_u32(0x0) {
+                    todo!("Interrupt controller");
+                }
+                debug!(target: "memctrl", "Disabling write to I_MASK");
             }
             _ => {
                 debug!(

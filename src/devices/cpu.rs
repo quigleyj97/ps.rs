@@ -2,7 +2,7 @@ use crate::devices::bus::{BusDevice, SizedData};
 use crate::devices::cop0::Cop0;
 use crate::utils::cpustructs::{CpuState, Exception, Instruction, Mnemonic, CPU_POWERON_STATE};
 use crate::utils::decode::decode_instruction;
-use crate::utils::disasm::disasm_instr;
+use crate::utils::disasm::pprint_instr;
 use log::{debug, trace};
 
 macro_rules! sign_extend {
@@ -109,7 +109,7 @@ pub fn exec<T: WithCpu + BusDevice>(mb: &mut T) {
     }
 
     let (mnemonic, instruction) = decode_instruction(cur_instruction);
-    trace!(target: "cpu", "STEP ${:08X} 0x{:08X} SP={:08X} RA={:08X} {}", cur_pc, *instruction, mb.cpu().state.registers[29],mb.cpu().state.registers[31], disasm_instr(mnemonic, instruction));
+    trace!(target: "cpu", "STEP ${:08X} 0x{:08X} {}", cur_pc, *instruction, pprint_instr(mnemonic, instruction, &mb.cpu().state));
     let fn_handler = match_handler::<T>(mnemonic);
     match fn_handler(mb, instruction) {
         None => {} // do nothing- operation completed successfully
@@ -412,23 +412,23 @@ op_fn!(op_j, (mb, instr), {
 op_fn!(op_jal, (mb, instr), {
     // 31 = RA register
     let pc = mb.cpu().state.pc;
-    write_reg(mb.cpu_mut(), 31, pc);
-    // re-use the J op
+    write_reg(mb.cpu_mut(), 31, pc + 4); // add 4 since the PC advance hasn't happened yet
+                                         // re-use the J op
     op_j(mb, instr)
 });
 
 op_fn!(op_jalr, (mb, instr), {
     // 31 = RA register
     let pc = mb.cpu().state.pc;
-    write_reg(mb.cpu_mut(), 31, pc);
+    write_reg(mb.cpu_mut(), 31, pc + 4); // add 4 since the PC advance hasn't happened yet
     let jmp_to = get_reg(mb.cpu(), instr.rs() as usize);
-    mb.cpu_mut().state.pc = jmp_to;
+    mb.cpu_mut().state.pc = jmp_to - 4; // correct for PC advance
     None
 });
 
 op_fn!(op_jr, (mb, instr), {
     let jmp_to = get_reg(mb.cpu(), instr.rs() as usize);
-    mb.cpu_mut().state.pc = jmp_to;
+    mb.cpu_mut().state.pc = jmp_to - 4; // correct for PC advance
     None
 });
 
