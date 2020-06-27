@@ -80,6 +80,44 @@ pub enum RegisterIndex {
     RA = 31,
 }
 
+#[derive(Clone, Debug)]
+pub struct CpuState {
+    /// The CPU registers
+    pub registers: [u32; 32],
+    /// The HI register for DIV/MULT operations
+    pub hi: u32,
+    /// THe LO register for DIV/MULT operations
+    pub lo: u32,
+    /// The program counter register
+    pub pc: u32,
+    /// Number of idle cycles to burn to synchronize the CPU with the clock
+    ///
+    /// Some operations will increase this, for things like reads from memory,
+    /// which represent how many cycles the CPU will be blocked executing that
+    /// read.
+    pub wait: u32,
+    /// The next instruction in the pipeline, as 2-tuple of word and address
+    ///
+    /// This is implemented to simulate delay slots, which occur due to how the
+    /// MIPS architecture handles (or more accurately, doesn't handle) branch
+    /// hazards in instructions.
+    pub next_instruction: (u32, u32),
+    /// A load to execute, if any are pipelined, as a 2-tuple of (reg idx, data)
+    pub next_load: (usize, u32),
+}
+
+pub const CPU_POWERON_STATE: CpuState = CpuState {
+    // from IDX docs
+    pc: 0xBFC0_0000,
+    // the rest of this is shooting from the hip
+    registers: [0u32; 32],
+    hi: 0,
+    lo: 0,
+    next_instruction: (0x0000_00000, 0x0),
+    next_load: (0, 0),
+    wait: 0,
+};
+
 #[derive(Debug, Eq, PartialEq, Copy, Clone)]
 pub enum Mnemonic {
     /// Add

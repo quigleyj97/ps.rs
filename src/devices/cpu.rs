@@ -1,6 +1,6 @@
 use crate::devices::bus::{BusDevice, SizedData};
 use crate::devices::cop0::Cop0;
-use crate::utils::cpustructs::{Exception, Instruction, Mnemonic};
+use crate::utils::cpustructs::{CpuState, Exception, Instruction, Mnemonic, CPU_POWERON_STATE};
 use crate::utils::decode::decode_instruction;
 use crate::utils::disasm::disasm_instr;
 use log::{debug, trace};
@@ -28,43 +28,11 @@ macro_rules! op_fn {
     };
 }
 
-#[derive(Clone, Debug)]
-pub struct CpuState {
-    /// The CPU registers
-    registers: [u32; 32],
-    /// The program counter register
-    pub pc: u32,
-    /// Number of idle cycles to burn to synchronize the CPU with the clock
-    ///
-    /// Some operations will increase this, for things like reads from memory,
-    /// which represent how many cycles the CPU will be blocked executing that
-    /// read.
-    pub wait: u32,
-    /// The next instruction in the pipeline, as 2-tuple of word and address
-    ///
-    /// This is implemented to simulate delay slots, which occur due to how the
-    /// MIPS architecture handles (or more accurately, doesn't handle) branch
-    /// hazards in instructions.
-    next_instruction: (u32, u32),
-    /// A load to execute, if any are pipelined, as a 2-tuple of (reg idx, data)
-    next_load: (usize, u32),
-}
-
-pub const CPU_POWERON_STATE: CpuState = CpuState {
-    // from IDX docs
-    pc: 0xBFC0_0000,
-    // the rest of this is shooting from the hip
-    registers: [0u32; 32],
-    next_instruction: (0x0000_00000, 0x0),
-    next_load: (0, 0),
-    wait: 0,
-};
-
 /// The CPU for the PlayStation
 ///
 /// This CPU is a MIPS ISA with a 5-stage pipeline
 pub struct CpuR3000 {
-    pub state: CpuState,
+    state: CpuState,
     pub cycles: u64,
     pub cop0: Cop0,
 }
@@ -184,8 +152,8 @@ fn match_handler<T: WithCpu + BusDevice>(mnemonic: Mnemonic) -> OpcodeHandler<T>
         Mnemonic::CFCz =>           /*op_cfcz,*/todo!("instr {:?}", mnemonic),
         Mnemonic::COPz =>           /*op_copz,*/todo!("instr {:?}", mnemonic),
         Mnemonic::CTCz =>           /*op_ctcz,*/todo!("instr {:?}", mnemonic),
-        Mnemonic::DIV =>            /*op_div,*/todo!("instr {:?}", mnemonic),
-        Mnemonic::DIVU =>           /*op_divu,*/todo!("instr {:?}", mnemonic),
+        Mnemonic::DIV => op_div,
+        Mnemonic::DIVU => op_divu,
         Mnemonic::J => op_j,
         Mnemonic::JAL => op_jal,
         Mnemonic::JALR => op_jalr,
@@ -200,8 +168,8 @@ fn match_handler<T: WithCpu + BusDevice>(mnemonic: Mnemonic) -> OpcodeHandler<T>
         Mnemonic::LWL =>            /*op_lwl,*/todo!("instr {:?}", mnemonic),
         Mnemonic::LWR =>            /*op_lwr,*/todo!("instr {:?}", mnemonic),
         Mnemonic::MFCz => op_mfcz,
-        Mnemonic::MFHI =>           /*op_mfhi,*/todo!("instr {:?}", mnemonic),
-        Mnemonic::MFLO =>           /*op_mflo,*/todo!("instr {:?}", mnemonic),
+        Mnemonic::MFHI => op_mfhi,
+        Mnemonic::MFLO => op_mflo,
         Mnemonic::MTCz => op_mtcz,
         Mnemonic::MTHI =>           /*op_mthi,*/todo!("instr {:?}", mnemonic),
         Mnemonic::MTLO =>           /*op_mtlo,*/todo!("instr {:?}", mnemonic),
@@ -218,12 +186,12 @@ fn match_handler<T: WithCpu + BusDevice>(mnemonic: Mnemonic) -> OpcodeHandler<T>
         Mnemonic::SLTI => op_slti,
         Mnemonic::SLTIU => op_sltiu,
         Mnemonic::SLTU => op_sltu,
-        Mnemonic::SRA =>            /*op_sra,*/todo!("instr {:?}", mnemonic),
-        Mnemonic::SRAV =>           /*op_srav,*/todo!("instr {:?}", mnemonic),
-        Mnemonic::SRL =>            /*op_srl,*/todo!("instr {:?}", mnemonic),
-        Mnemonic::SRLV =>           /*op_srlv,*/todo!("instr {:?}", mnemonic),
-        Mnemonic::SUB =>            /*op_sub,*/todo!("instr {:?}", mnemonic),
-        Mnemonic::SUBU =>           /*op_subu,*/todo!("instr {:?}", mnemonic),
+        Mnemonic::SRA => op_sra,
+        Mnemonic::SRAV => op_srav,
+        Mnemonic::SRL => op_srl,
+        Mnemonic::SRLV => op_srlv,
+        Mnemonic::SUB => op_sub,
+        Mnemonic::SUBU => op_subu,
         Mnemonic::SW => op_sw,
         Mnemonic::SWCz =>           /*op_swcz,*/todo!("instr {:?}", mnemonic),
         Mnemonic::SWL =>            /*op_swl,*/todo!("instr {:?}", mnemonic),
@@ -378,6 +346,62 @@ op_fn!(op_bne, (mb, instr), {
 
 // skip
 
+op_fn!(op_div, (mb, instr), {
+    let cpu = mb.cpu_mut();
+    let numerator = get_reg(cpu, instr.rs() as usize) as i32;
+    let denominator = get_reg(cpu, instr.rt() as usize) as i32;
+
+    // divide-by-zeros actually don't result in exceptions, instead the CPU just
+    // puts garbage into the HI and LO registers
+    if denominator == 0 {
+        cpu.state.hi = numerator as u32;
+        cpu.state.lo = if numerator >= 0 {
+            0xFFFF_FFFF
+        } else {
+            0x0000_0001
+        };
+        return None;
+    }
+
+    // additionally, attempting to divide i32::MIN (-2mil something) by -1
+    // results in a number that is too large to store in a 32-bit int. So the
+    // CPU also inserts garbage into the result registers
+    if numerator == i32::MIN && denominator == -1 {
+        cpu.state.hi = 0;
+        cpu.state.lo = i32::MIN as u32;
+        return None;
+    }
+
+    // finally do the happy-path integer division
+    cpu.state.hi = (numerator % denominator) as u32;
+    cpu.state.lo = (numerator / denominator) as u32;
+    None
+});
+
+op_fn!(op_divu, (mb, instr), {
+    let cpu = mb.cpu_mut();
+    let numerator = get_reg(cpu, instr.rs() as usize);
+    let denominator = get_reg(cpu, instr.rt() as usize);
+
+    // divide-by-zeros actually don't result in exceptions, instead the CPU just
+    // puts garbage into the HI and LO registers
+    if denominator == 0 {
+        cpu.state.hi = numerator;
+        cpu.state.lo = if (numerator as i32) >= 0 {
+            0xFFFF_FFFF
+        } else {
+            0x0000_0001
+        };
+        return None;
+    }
+
+    // DIVU doesn't have the same caveats as DIV with i32::MIN, go directly to
+    // happy-path integer division
+    cpu.state.hi = numerator % denominator;
+    cpu.state.lo = numerator / denominator;
+    None
+});
+
 op_fn!(op_j, (mb, instr), {
     let target = instr.target() << 2;
     let new_pc = target | mb.cpu().state.pc & 0xF000_0000; // select the 4 MSBs of the old PC
@@ -398,13 +422,13 @@ op_fn!(op_jalr, (mb, instr), {
     let pc = mb.cpu().state.pc;
     write_reg(mb.cpu_mut(), 31, pc);
     let jmp_to = get_reg(mb.cpu(), instr.rs() as usize);
-    mb.cpu_mut().state.pc = jmp_to - 4; //correct for PC advance
+    mb.cpu_mut().state.pc = jmp_to;
     None
 });
 
 op_fn!(op_jr, (mb, instr), {
     let jmp_to = get_reg(mb.cpu(), instr.rs() as usize);
-    mb.cpu_mut().state.pc = jmp_to - 4; //correct for PC advance
+    mb.cpu_mut().state.pc = jmp_to;
     None
 });
 
@@ -482,7 +506,19 @@ op_fn!(op_mfcz, (mb, instr), {
     }
 });
 
-// skip
+op_fn!(op_mfhi, (mb, instr), {
+    let reg = instr.rd() as usize;
+    let cpu = mb.cpu_mut();
+    write_reg(cpu, reg, cpu.state.hi);
+    None
+});
+
+op_fn!(op_mflo, (mb, instr), {
+    let reg = instr.rd() as usize;
+    let cpu = mb.cpu_mut();
+    write_reg(cpu, reg, cpu.state.lo);
+    None
+});
 
 op_fn!(op_mtcz, (mb, instr), {
     let coproc = instr.op() & 0b11;
@@ -606,7 +642,73 @@ op_fn!(op_sltu, (mb, instr), {
     None
 });
 
-// skip
+op_fn!(op_sra, (mb, instr), {
+    let target = instr.rt() as usize;
+    let dest = instr.rd() as usize;
+    let shamt = instr.shamt();
+    let cpu = mb.cpu_mut();
+    write_reg(
+        cpu,
+        dest,
+        (get_reg(cpu, target) as i32).wrapping_shr(shamt as u32) as u32,
+    );
+    None
+});
+
+op_fn!(op_srav, (mb, instr), {
+    let target = get_reg(mb.cpu(), instr.rt() as usize) as i32;
+    let dest = instr.rd() as usize;
+    let shift = get_reg(mb.cpu(), instr.rs() as usize) & 0b0001_1111;
+    write_reg(mb.cpu_mut(), dest, target.wrapping_shr(shift as u32) as u32);
+    None
+});
+
+op_fn!(op_srl, (mb, instr), {
+    let target = instr.rt() as usize;
+    let dest = instr.rd() as usize;
+    let shamt = instr.shamt();
+    let cpu = mb.cpu_mut();
+    write_reg(cpu, dest, get_reg(cpu, target).wrapping_shr(shamt as u32));
+    None
+});
+
+op_fn!(op_srlv, (mb, instr), {
+    let target = get_reg(mb.cpu(), instr.rt() as usize);
+    let dest = instr.rd() as usize;
+    let shift = get_reg(mb.cpu(), instr.rs() as usize) & 0b0001_1111;
+    write_reg(mb.cpu_mut(), dest, target.wrapping_shr(shift as u32));
+    None
+});
+
+op_fn!(op_sub, (mb, instr), {
+    let source = instr.rs() as usize;
+    let target = instr.rt() as usize;
+    let dest = instr.rd() as usize;
+    let cpu = mb.cpu_mut();
+    let source_data = get_reg(cpu, source);
+    let target_data = get_reg(cpu, target);
+    // test for overflow
+    match (source_data as i32).checked_sub(target_data as i32) {
+        Some(res) => {
+            write_reg(cpu, dest, res as u32);
+            None
+        }
+        None => Some(Exception::IntegerOverflow),
+    }
+});
+
+op_fn!(op_subu, (mb, instr), {
+    let source = instr.rs() as usize;
+    let target = instr.rt() as usize;
+    let dest = instr.rd() as usize;
+    let cpu = mb.cpu_mut();
+    let source_data = get_reg(cpu, source);
+    let target_data = get_reg(cpu, target);
+    // test for overflow
+    let res = (source_data as i32).wrapping_sub(target_data as i32);
+    write_reg(cpu, dest, res as u32);
+    None
+});
 
 op_fn!(op_sw, (mb, instr), {
     let base = instr.rs() as usize;
