@@ -413,8 +413,7 @@ op_fn!(op_jal, (mb, instr), {
     // 31 = RA register
     let pc = mb.cpu().state.pc;
     write_reg(mb.cpu_mut(), 31, pc + 4); // add 4 since the PC advance hasn't happened yet
-                                         // re-use the J op
-    op_j(mb, instr)
+    op_j(mb, instr) // re-use the J op
 });
 
 op_fn!(op_jalr, (mb, instr), {
