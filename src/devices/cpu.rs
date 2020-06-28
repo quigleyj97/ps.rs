@@ -111,19 +111,29 @@ pub fn exec<T: WithCpu + BusDevice>(mb: &mut T) {
     let (mnemonic, instruction) = decode_instruction(cur_instruction);
     trace!(target: "cpu", "STEP ${:08X} 0x{:08X} {}", cur_pc, *instruction, pprint_instr(mnemonic, instruction, &mb.cpu().state));
     let fn_handler = match_handler::<T>(mnemonic);
-    match fn_handler(mb, instruction) {
-        None => {} // do nothing- operation completed successfully
-        Some(e) => {
-            // normally we'd route this to cop0 to handle, but I haven't
-            // implemented much of that coprocessor yet.
-            todo!("Exception handling via cop0 for exception {:?}", e);
-        }
-    }
+
+    let res = fn_handler(mb, instruction);
+
     // post-execution updates
-    {
-        let cpu = mb.cpu_mut();
-        cpu.cycles += 1;
-        cpu.state.pc += 4;
+    let cpu = mb.cpu_mut();
+    cpu.cycles += 1;
+    match res {
+        None => {
+            // just advance the PC- operation completed successfully
+            cpu.state.pc += 4;
+        }
+        Some(exc) => {
+            // Handle the exception
+            // First we have to clear out the pipeline
+            mb.cpu_mut().state.next_load = (0, 0);
+
+            // then, identify which address to map to
+            // (use cop0 for this since address depends on cop0 state)
+            let exc_addr = mb.cpu_mut().cop0.handle_exception(exc, cur_pc);
+            let exc_instr = mb.read::<u32>(exc_addr);
+            mb.cpu_mut().state.next_instruction = (exc_instr, exc_addr);
+            mb.cpu_mut().state.pc = exc_addr.wrapping_add(4);
+        }
     }
 }
 
@@ -196,7 +206,7 @@ fn match_handler<T: WithCpu + BusDevice>(mnemonic: Mnemonic) -> OpcodeHandler<T>
         Mnemonic::SWCz =>           /*op_swcz,*/todo!("instr {:?}", mnemonic),
         Mnemonic::SWL =>            /*op_swl,*/todo!("instr {:?}", mnemonic),
         Mnemonic::SWR =>            /*op_swr,*/todo!("instr {:?}", mnemonic),
-        Mnemonic::SYSCALL =>        /*op_syscall,*/todo!("instr {:?}", mnemonic),
+        Mnemonic::SYSCALL => op_syscall,
         Mnemonic::XOR =>            /*op_xor,*/todo!("instr {:?}", mnemonic),
         Mnemonic::XORI =>           /*op_xori,*/todo!("instr {:?}", mnemonic),
     }
@@ -720,6 +730,10 @@ op_fn!(op_sw, (mb, instr), {
     write(mb, addr, get_reg(mb.cpu(), target));
     None
 });
+
+// skip
+
+op_fn!(op_syscall, (mb, instr), { Some(Exception::Syscall) });
 
 //#endregion
 

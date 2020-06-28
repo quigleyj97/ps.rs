@@ -1,6 +1,21 @@
 /// Structs, enums, and helpers for modeling CPU state
 use std::ops::Deref;
 
+/// Magic addresses, or "vectors", that the CPU jumps
+#[derive(Copy, Clone, Eq, PartialEq)]
+pub enum MagicAddress {
+    /// KUSEG TLB miss exception (BEV only)
+    TLBMiss = 0x8000_0000,
+    /// All other exceptions (BEV = 0)
+    MiscException = 0x8000_0080,
+    /// KUSEG TLB miss exception (BEV = 1)
+    TLBMissBev = 0xBFC0_0100,
+    /// All other exceptions (BEV = 1)
+    MiscExceptionBev = 0xBFC0_0180,
+    /// Reset vector
+    ResetVector = 0xBFC0_0000,
+}
+
 #[derive(Debug, Eq, PartialEq, Ord, PartialOrd)]
 pub enum RegisterIndex {
     /// 0 register
@@ -108,7 +123,7 @@ pub struct CpuState {
 
 pub const CPU_POWERON_STATE: CpuState = CpuState {
     // from IDX docs
-    pc: 0xBFC0_0000,
+    pc: MagicAddress::ResetVector as u32,
     // the rest of this is shooting from the hip
     registers: [0u32; 32],
     hi: 0,
@@ -260,12 +275,37 @@ pub enum InstructionFormat {
 }
 
 /// Enum for processor exceptions
-#[derive(Debug, Eq, PartialEq)]
+#[derive(Debug, Eq, PartialEq, Copy, Clone)]
 pub enum Exception {
-    /// Raised when an ALU operation resulted in an overflow
-    IntegerOverflow,
+    /// Raised when an interrupt occurs
+    Interrupt = 0x0,
+    /// Docs call this "TLB modification". Not sure what that means.
+    TLBModification = 0x1,
+    /// The docs are similarly unhelpful, calling this "TLB load"
+    TLBLoad = 0x2,
+    /// Ditto, "TLB store"
+    TLBStore = 0x3,
+    /// Raised when attempting to read from an unmapped virtual address
+    AddressLoad = 0x4,
+    /// Raised when attempting to store to an unmapped virtual address
+    AddressStore = 0x5,
+    /// Raised when attempting to fetch an instruction from an unmapped physical address
+    ExtBusInstructionFetch = 0x06,
+    /// Raised when attempting to load data from an unmapped physical address
+    ///
+    /// Note that this error is _not_ raised when writing! Only unmapped KUSEG
+    /// writes raise this exception
+    ExtBusDataLoad = 0x7,
+    /// Raised when the CPU encounters a hardware syscall (SYSCALL instr)
+    Syscall = 0x8,
+    /// Raised when the CPU encounters a hardware breakpoint (BREAK instr)
+    Breakpoint = 0x9,
+    /// Raised when decoding an illegal instruction
+    ReservedInstruction = 0xA,
     /// Raised when attempting to issue a command to an unusable coprocessor
-    CoprocessorUnusable,
+    CoprocessorUnusable = 0xB,
+    /// Raised when an ALU operation resulted in an overflow
+    IntegerOverflow = 0xC,
 }
 
 const INSTR_PART_OP: u32 = 0xFC00_0000;
