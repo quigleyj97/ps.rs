@@ -181,8 +181,8 @@ fn match_handler<T: WithCpu + BusDevice>(mnemonic: Mnemonic) -> OpcodeHandler<T>
         Mnemonic::MFHI => op_mfhi,
         Mnemonic::MFLO => op_mflo,
         Mnemonic::MTCz => op_mtcz,
-        Mnemonic::MTHI =>           /*op_mthi,*/todo!("instr {:?}", mnemonic),
-        Mnemonic::MTLO =>           /*op_mtlo,*/todo!("instr {:?}", mnemonic),
+        Mnemonic::MTHI => op_mthi,
+        Mnemonic::MTLO => op_mtlo,
         Mnemonic::MULT =>           /*op_mult,*/todo!("instr {:?}", mnemonic),
         Mnemonic::MULTU =>          /*op_multu,*/todo!("instr {:?}", mnemonic),
         Mnemonic::NOR =>            /*op_nor,*/todo!("instr {:?}", mnemonic),
@@ -529,6 +529,22 @@ op_fn!(op_mflo, (mb, instr), {
     None
 });
 
+op_fn!(op_mthi, (mb, instr), {
+    let s = instr.rs() as usize;
+
+    mb.cpu_mut().state.hi = get_reg(mb.cpu(), s);
+    None
+});
+
+op_fn!(op_mtlo, (mb, instr), {
+    let s = instr.rs() as usize;
+
+    mb.cpu_mut().state.lo = get_reg(mb.cpu(), s);
+    None
+});
+
+// skip
+
 op_fn!(op_mtcz, (mb, instr), {
     let coproc = instr.op() & 0b11;
     let data = get_reg(mb.cpu(), instr.rt() as usize);
@@ -733,7 +749,7 @@ op_fn!(op_sw, (mb, instr), {
 
 // skip
 
-op_fn!(op_syscall, (mb, instr), { Some(Exception::Syscall) });
+op_fn!(op_syscall, (_mb, _instr), { Some(Exception::Syscall) });
 
 //#endregion
 
