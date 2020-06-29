@@ -11,7 +11,8 @@
 //! Presumably cop0 emulation may be required for some titles, and it might have
 //! been useful for Net Yaroze and debug builds.
 
-use crate::utils::cpustructs::{Exception, MagicAddress};
+use crate::devices::cpu::CpuR3000;
+use crate::utils::cpustructs::{Exception, Instruction, MagicAddress};
 use log::debug;
 
 pub struct Cop0 {
@@ -97,29 +98,57 @@ impl Cop0 {
             _ => todo!("Unhandled read from cop0 {} register", regidx),
         }
     }
+}
 
-    /// Setup state for an exception handler, and return the next CPU address
-    pub fn handle_exception(&mut self, exc: Exception, pc: u32) -> u32 {
-        // setup the cause register
-        self.cause = 0 | ((exc as u32) << 2);
+/// Setup state for an exception handler, and return the next CPU address
+pub fn handle_exception(cpu: &mut CpuR3000, exc: Exception, pc: u32, is_delay_slot: bool) -> u32 {
+    let cop0 = &mut cpu.cop0;
+    // setup the cause register
+    cop0.cause = 0 | ((exc as u32) << 2);
 
-        // advance the interrupt enable bits
-        let mode = self.sr & 0x3F;
-        self.sr &= !0x3f;
-        self.sr |= (mode << 2) & 0x3F;
+    // advance the interrupt enable bits
+    let mode = cop0.sr & 0x3F;
+    cop0.sr &= !0x3f;
+    cop0.sr |= (mode << 2) & 0x3F;
 
-        // set the return address
-        self.epc = pc;
+    // set the return address
+    cop0.epc = pc;
 
-        let is_tlb_exc = exc == Exception::TLBModification
-            || exc == Exception::TLBLoad
-            || exc == Exception::TLBStore;
+    if is_delay_slot {
+        // we need to correct the EPC and cause register to reflect that we are
+        // inside a delay slot
+        cop0.cause |= 0x8000_0000;
+        cop0.epc = cop0.epc.wrapping_sub(4);
+    }
 
-        match (is_tlb_exc, self.is_bev()) {
-            (false, false) => MagicAddress::MiscException as u32,
-            (false, true) => MagicAddress::MiscExceptionBev as u32,
-            (true, false) => MagicAddress::TLBMiss as u32,
-            (true, true) => MagicAddress::TLBMissBev as u32,
+    let is_tlb_exc = exc == Exception::TLBModification
+        || exc == Exception::TLBLoad
+        || exc == Exception::TLBStore;
+
+    match (is_tlb_exc, cop0.is_bev()) {
+        (false, false) => MagicAddress::MiscException as u32,
+        (false, true) => MagicAddress::MiscExceptionBev as u32,
+        (true, false) => MagicAddress::TLBMiss as u32,
+        (true, true) => MagicAddress::TLBMissBev as u32,
+    }
+}
+
+pub fn handle_cop_instr(cpu: &mut CpuR3000, instr: Instruction) {
+    match instr.funct() {
+        0b010000 => {
+            // RFE
+            let cop = &mut cpu.cop0;
+            let mode = cop.sr & 0x3F;
+            cop.sr &= !0x3F;
+            cop.sr |= mode >> 2;
         }
+        0b001000 => todo!("TLBP"),  // TLB probe
+        0b000001 => todo!("TLBR"),  // Read indexed TLB entry
+        0b000010 => todo!("TLBWI"), // Write indexed TLB entry
+        // "Write Random" TLB entry
+        //
+        // ...no, I have no clue what that means either
+        0b000110 => todo!("TLBWR"),
+        _ => panic!("Unknown COP0 instruction {:08X}", *instr),
     }
 }

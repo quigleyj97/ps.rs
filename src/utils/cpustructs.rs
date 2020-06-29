@@ -119,6 +119,8 @@ pub struct CpuState {
     pub next_instruction: (u32, u32),
     /// A load to execute, if any are pipelined, as a 2-tuple of (reg idx, data)
     pub next_load: (usize, u32),
+    /// Whether the current instruction is executing in a branch delay slot
+    pub is_branch_delay: bool,
 }
 
 pub const CPU_POWERON_STATE: CpuState = CpuState {
@@ -131,6 +133,7 @@ pub const CPU_POWERON_STATE: CpuState = CpuState {
     next_instruction: (0x0000_00000, 0x0),
     next_load: (0, 0),
     wait: 0,
+    is_branch_delay: false,
 };
 
 #[derive(Debug, Eq, PartialEq, Copy, Clone)]

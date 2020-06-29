@@ -1,5 +1,5 @@
 use crate::devices::bus::{BusDevice, SizedData};
-use crate::devices::cop0::Cop0;
+use crate::devices::cop0;
 use crate::utils::cpustructs::{CpuState, Exception, Instruction, Mnemonic, CPU_POWERON_STATE};
 use crate::utils::decode::decode_instruction;
 use crate::utils::disasm::pprint_instr;
@@ -32,9 +32,9 @@ macro_rules! op_fn {
 ///
 /// This CPU is a MIPS ISA with a 5-stage pipeline
 pub struct CpuR3000 {
-    state: CpuState,
+    pub state: CpuState,
     pub cycles: u64,
-    pub cop0: Cop0,
+    pub cop0: cop0::Cop0,
 }
 
 impl CpuR3000 {
@@ -42,7 +42,7 @@ impl CpuR3000 {
         return CpuR3000 {
             state: CPU_POWERON_STATE.clone(),
             cycles: 0,
-            cop0: Cop0::new(),
+            cop0: cop0::Cop0::new(),
         };
     }
 }
@@ -96,12 +96,15 @@ pub fn tick<T: WithCpu>(mb: &mut T) -> bool {
 pub fn exec<T: WithCpu + BusDevice>(mb: &mut T) {
     let (cur_instruction, cur_pc) = mb.cpu().state.next_instruction;
     let next_pc = mb.cpu().state.pc;
+    let is_in_delay_slot = mb.cpu().state.is_branch_delay;
     // pre-execution updates
     {
         let next_instruction = mb.read::<u32>(next_pc);
         let cpu = mb.cpu_mut();
         // advance the PC
         cpu.state.next_instruction = (next_instruction, next_pc);
+        // reset the branch delay latch
+        cpu.state.is_branch_delay = false;
         // execute any pipelined loads
         let (reg_idx, val) = cpu.state.next_load;
         cpu.state.registers[reg_idx] = val;
@@ -129,7 +132,7 @@ pub fn exec<T: WithCpu + BusDevice>(mb: &mut T) {
 
             // then, identify which address to map to
             // (use cop0 for this since address depends on cop0 state)
-            let exc_addr = mb.cpu_mut().cop0.handle_exception(exc, cur_pc);
+            let exc_addr = cop0::handle_exception(mb.cpu_mut(), exc, cur_pc, is_in_delay_slot);
             let exc_instr = mb.read::<u32>(exc_addr);
             mb.cpu_mut().state.next_instruction = (exc_instr, exc_addr);
             mb.cpu_mut().state.pc = exc_addr.wrapping_add(4);
@@ -160,7 +163,7 @@ fn match_handler<T: WithCpu + BusDevice>(mnemonic: Mnemonic) -> OpcodeHandler<T>
         Mnemonic::BNE => op_bne,
         Mnemonic::BREAK =>          /*op_break,*/todo!("instr {:?}", mnemonic),
         Mnemonic::CFCz =>           /*op_cfcz,*/todo!("instr {:?}", mnemonic),
-        Mnemonic::COPz =>           /*op_copz,*/todo!("instr {:?}", mnemonic),
+        Mnemonic::COPz => op_copz,
         Mnemonic::CTCz =>           /*op_ctcz,*/todo!("instr {:?}", mnemonic),
         Mnemonic::DIV => op_div,
         Mnemonic::DIVU => op_divu,
@@ -356,6 +359,20 @@ op_fn!(op_bne, (mb, instr), {
 
 // skip
 
+op_fn!(op_copz, (mb, instr), {
+    let coproc = instr.op() & 0b11;
+    match coproc {
+        0 => {
+            cop0::handle_cop_instr(mb.cpu_mut(), instr);
+            None
+        }
+        // TODO: Cop2 is the GTE
+        _ => Some(Exception::CoprocessorUnusable),
+    }
+});
+
+// skip
+
 op_fn!(op_div, (mb, instr), {
     let cpu = mb.cpu_mut();
     let numerator = get_reg(cpu, instr.rs() as usize) as i32;
@@ -416,6 +433,7 @@ op_fn!(op_j, (mb, instr), {
     let target = instr.target() << 2;
     let new_pc = target | mb.cpu().state.pc & 0xF000_0000; // select the 4 MSBs of the old PC
     mb.cpu_mut().state.pc = new_pc - 4; // correct for the PC advance later
+    mb.cpu_mut().state.is_branch_delay = true; // set the branch hazard flag
     None
 });
 
@@ -432,12 +450,14 @@ op_fn!(op_jalr, (mb, instr), {
     write_reg(mb.cpu_mut(), 31, pc + 4); // add 4 since the PC advance hasn't happened yet
     let jmp_to = get_reg(mb.cpu(), instr.rs() as usize);
     mb.cpu_mut().state.pc = jmp_to - 4; // correct for PC advance
+    mb.cpu_mut().state.is_branch_delay = true; // set the branch hazard flag
     None
 });
 
 op_fn!(op_jr, (mb, instr), {
     let jmp_to = get_reg(mb.cpu(), instr.rs() as usize);
     mb.cpu_mut().state.pc = jmp_to - 4; // correct for PC advance
+    mb.cpu_mut().state.is_branch_delay = true; // set the branch hazard flag
     None
 });
 
