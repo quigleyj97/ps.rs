@@ -55,7 +55,15 @@ impl BusDevice for Motherboard {
             // Device::Expansion2 => {}
             // Device::Expansion3 => {}
             Device::BIOS => self.bios.read::<T>(local_addr),
-            _ => panic!("Unmapped memory: ${:08X}", addr),
+            Device::IntCtrl => {
+                debug!(target: "mb", "Attempt to read from interrupt controller, ignoring for now");
+                T::from_u32(0)
+            }
+            Device::RamCtrl => {
+                debug!(target: "mb", "Attempt to read from RAM memory controller, ignoring for now");
+                T::from_u32(0)
+            }
+            _ => panic!("Unmapped memory read from dev {:?}: ${:08X}", dev, addr),
             // Device::IOCacheControl => {}
             // Device::None => {}
             // Device::VMemException => {}
@@ -114,7 +122,19 @@ impl BusDevice for Motherboard {
                     addr, data
                 );
             }
-            _ => panic!("Unmapped memory: ${:08X}", addr),
+            Device::IntCtrl => {
+                if data != T::from_u32(0x0) {
+                    todo!("Interrupt controller");
+                }
+                debug!(target: "memctrl", "Disabling write to I_MASK");
+            }
+            Device::RamCtrl => {
+                debug!(target: "mb", "Attempt to write to RAM memory controller, ignoring for now");
+            }
+            Device::Timers => {
+                debug!(target: "mb", "Attempt to write to timer controller, ignoring for now");
+            }
+            _ => panic!("Unmapped memory write to dev {:?}: ${:08X}", dev, addr),
             // Device::None => {}
             // Device::VMemException => {}
         }

@@ -8,7 +8,7 @@ pub enum Segment {
 }
 
 /// The devices on the main bus
-#[derive(Debug, Eq, PartialEq)]
+#[derive(Debug, Eq, PartialEq, Copy, Clone)]
 pub enum Device {
     /// The system RAM
     RAM,
@@ -18,6 +18,16 @@ pub enum Device {
     Scratch,
     /// The memory control registers
     MemCtrl,
+    /// Peripheral IO, such as the Memory Card and the Serial Port
+    IOPeripheral,
+    /// The RAM size register, which appears to be involved in mirroring
+    RamCtrl,
+    /// The Interrupt Controller
+    IntCtrl,
+    /// DMA
+    DMA,
+    /// The Timer controller
+    Timers,
     /// The Sound Processing Unit
     SPU,
     /// The second expansion area
@@ -46,6 +56,16 @@ impl Range {
         let end = start.wrapping_add(length);
         Range { start, length, end }
     }
+
+    /// Return true if the given address exists within this Range
+    fn contains(&self, addr: u32) -> bool {
+        addr >= self.start && addr < self.end
+    }
+
+    /// Return the given global address as an address local to this Range
+    fn as_local_addr(&self, addr: u32) -> u32 {
+        addr - self.start
+    }
 }
 
 //#region KSEG consts
@@ -63,13 +83,34 @@ const KSEG2_RANGE: Range = Range::new(0xC000_0000, 0x4000_0000);
 const RAM_RANGE: Range = Range::new(0x0000_0000, 2048 * 1024);
 const EXP1_RANGE: Range = Range::new(0x0F00_0000, 8192 * 1024);
 const SCRATCH_RANGE: Range = Range::new(0x0F80_0000, 1024);
-const MEM_CTRL_RANGE: Range = Range::new(0x0F80_1000, 3072); // TODO: this is supposed to be much smaller
-                                                             // the BIOS writes to 0x1F80_1060 for some reason, but it doesn't look to do anything...
+const MEM_CTRL_RANGE: Range = Range::new(0x0F80_1000, 0x24);
+const PERIPHERAL_IO_RANGE: Range = Range::new(0x0F80_1040, 0x20);
+const RAM_CTRL_RANGE: Range = Range::new(0x0F80_1060, 4);
+const INT_CTRL_RANGE: Range = Range::new(0x0F80_1070, 8);
+const DMA_RANGE: Range = Range::new(0x0F80_1080, 128);
+const TIMER_RANGE: Range = Range::new(0x0F80_1100, 0x30);
 const SPU_RANGE: Range = Range::new(0x0F80_1c00, 640);
 const EXP2_RANGE: Range = Range::new(0x0F80_2000, 8 * 1024);
 const EXP3_RANGE: Range = Range::new(0x0FA0_0000, 2048 * 1024);
 const BIOS_RANGE: Range = Range::new(0x0FC0_0000, 512 * 1024);
 const CACHE_CTRL_RANGE: Range = Range::new(0x3FFE_0000, 512);
+
+const RANGES: &'static [(Device, Range)] = &[
+    (Device::RAM, RAM_RANGE),
+    (Device::Expansion1, EXP1_RANGE),
+    (Device::Scratch, SCRATCH_RANGE),
+    (Device::MemCtrl, MEM_CTRL_RANGE),
+    (Device::IOPeripheral, PERIPHERAL_IO_RANGE),
+    (Device::RamCtrl, RAM_CTRL_RANGE),
+    (Device::IntCtrl, INT_CTRL_RANGE),
+    (Device::DMA, DMA_RANGE),
+    (Device::Timers, TIMER_RANGE),
+    (Device::SPU, SPU_RANGE),
+    (Device::Expansion2, EXP2_RANGE),
+    (Device::Expansion3, EXP3_RANGE),
+    (Device::BIOS, BIOS_RANGE),
+    (Device::IOCacheControl, CACHE_CTRL_RANGE),
+];
 //#endregion
 
 /// Given an address, return a 3-tuple of the memory segment, the device, and
@@ -101,32 +142,15 @@ pub fn map_device(addr: u32) -> (Segment, Device, u32) {
         // address is larger than the memory map, throw a CPU exception
         return (segment, Device::VMemException, seg_local_addr);
     }
-    let (device, local_addr) =
-        if seg_local_addr >= RAM_RANGE.start && seg_local_addr < RAM_RANGE.end {
-            (Device::RAM, seg_local_addr - RAM_RANGE.start)
-        } else if seg_local_addr >= EXP1_RANGE.start && seg_local_addr < EXP1_RANGE.end {
-            (Device::Expansion1, seg_local_addr - EXP1_RANGE.start)
-        } else if seg_local_addr >= SCRATCH_RANGE.start
-            && seg_local_addr < SCRATCH_RANGE.end
-            && segment != Segment::KSEG1
-        {
-            (Device::Scratch, seg_local_addr - SCRATCH_RANGE.start)
-        } else if seg_local_addr >= MEM_CTRL_RANGE.start && seg_local_addr < MEM_CTRL_RANGE.end {
-            (Device::MemCtrl, seg_local_addr - MEM_CTRL_RANGE.start)
-        } else if seg_local_addr >= SPU_RANGE.start && seg_local_addr < SPU_RANGE.end {
-            (Device::SPU, seg_local_addr - SPU_RANGE.start)
-        } else if seg_local_addr >= EXP2_RANGE.start && seg_local_addr < EXP2_RANGE.end {
-            (Device::Expansion2, seg_local_addr - EXP2_RANGE.start)
-        } else if seg_local_addr >= EXP3_RANGE.start && seg_local_addr < EXP3_RANGE.end {
-            (Device::Expansion3, seg_local_addr - EXP3_RANGE.start)
-        } else if seg_local_addr >= BIOS_RANGE.start && seg_local_addr < BIOS_RANGE.end {
-            (Device::BIOS, seg_local_addr - BIOS_RANGE.start)
-        } else {
-            panic!(
-                "Invalid memory location in {:?}: ${:08X} / ${:08X}",
-                segment, addr, seg_local_addr
-            )
-        };
+    // TODO: Block Scratchpad in KSeg1
+    let (device, local_addr) = RANGES
+        .iter()
+        .find(|&(_, range)| range.contains(seg_local_addr))
+        .map(|(dev, range)| (dev.to_owned(), range.as_local_addr(seg_local_addr)))
+        .expect(&format!(
+            "Invalid memory location in {:?}: ${:08X} / ${:08X}",
+            segment, addr, seg_local_addr
+        ));
     return (segment, device, local_addr);
 }
 
