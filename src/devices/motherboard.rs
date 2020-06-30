@@ -63,6 +63,10 @@ impl BusDevice for Motherboard {
                 debug!(target: "mb", "Attempt to read from RAM memory controller, ignoring for now");
                 T::from_u32(0)
             }
+            Device::DMA => {
+                debug!(target: "mb", "Attempt to read from DMA register, mocking");
+                T::from_u32(0)
+            }
             _ => panic!("Unmapped memory read from dev {:?}: ${:08X}", dev, addr),
             // Device::IOCacheControl => {}
             // Device::None => {}
@@ -133,6 +137,9 @@ impl BusDevice for Motherboard {
             }
             Device::Timers => {
                 debug!(target: "mb", "Attempt to write to timer controller, ignoring for now");
+            }
+            Device::DMA => {
+                debug!(target: "mb", "Attempt to write to DMA register, ignoring");
             }
             _ => panic!("Unmapped memory write to dev {:?}: ${:08X}", dev, addr),
             // Device::None => {}
