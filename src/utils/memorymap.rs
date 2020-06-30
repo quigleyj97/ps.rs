@@ -142,7 +142,6 @@ pub fn map_device(addr: u32) -> (Segment, Device, u32) {
         // address is larger than the memory map, throw a CPU exception
         return (segment, Device::VMemException, seg_local_addr);
     }
-    // TODO: Block Scratchpad in KSeg1
     let (device, local_addr) = RANGES
         .iter()
         .find(|&(_, range)| range.contains(seg_local_addr))
@@ -151,6 +150,13 @@ pub fn map_device(addr: u32) -> (Segment, Device, u32) {
             "Invalid memory location in {:?}: ${:08X} / ${:08X}",
             segment, addr, seg_local_addr
         ));
+    // TODO: find a better way of handling seg-specific conditions
+    if segment == Segment::KSEG1 && device == Device::Scratch {
+        panic!(
+            "Invalid memory location in {:?}: ${:08X} / ${:08X}",
+            segment, addr, seg_local_addr
+        )
+    }
     return (segment, device, local_addr);
 }
 
