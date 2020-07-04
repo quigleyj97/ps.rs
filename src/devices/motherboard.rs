@@ -1,5 +1,6 @@
 use crate::devices::bus::{BusDevice, SizedData};
 use crate::devices::cpu;
+use crate::devices::gpu;
 use crate::devices::memctrl::MemoryController;
 use crate::devices::ram::Ram;
 use crate::devices::rom::Rom;
@@ -13,7 +14,8 @@ pub struct Motherboard {
     bios: Rom,
     ram: Ram,
     memctrl: MemoryController,
-    pub cpu: cpu::CpuR3000,
+    cpu: cpu::CpuR3000,
+    gpu: gpu::Gpu,
 }
 
 impl Motherboard {
@@ -26,6 +28,7 @@ impl Motherboard {
             bios: Rom::from_buf(bios),
             ram: Ram::with_size(2 * 1024 * 1024),
             cpu: cpu::CpuR3000::new(),
+            gpu: gpu::Gpu::new(),
             memctrl: MemoryController::new(),
         };
     }
@@ -54,6 +57,7 @@ impl BusDevice for Motherboard {
             }
             // Device::Expansion2 => {}
             // Device::Expansion3 => {}
+            Device::GPU => self.gpu.read::<T>(local_addr),
             Device::BIOS => self.bios.read::<T>(local_addr),
             Device::IntCtrl => {
                 debug!(target: "mb", "Attempt to read from interrupt controller, ignoring for now");
@@ -90,6 +94,7 @@ impl BusDevice for Motherboard {
             }
             // Device::Expansion2 => {}
             // Device::Expansion3 => {}
+            Device::GPU => self.gpu.peek::<T>(local_addr),
             Device::BIOS => self.bios.peek::<T>(local_addr),
             _ => None,
             // Device::IOCacheControl => {}
@@ -115,6 +120,7 @@ impl BusDevice for Motherboard {
                 debug!(target: "cpu", "Attempt to write to Expansion2: ${:08X} = 0x{:08X}", addr, data);
             }
             // Device::Expansion3 => {}
+            Device::GPU => self.gpu.write(local_addr, data),
             Device::BIOS => panic!(
                 "Attempt to write 0x{:08X} to read-only BIOS at ${:08}",
                 data, addr
@@ -155,5 +161,14 @@ impl cpu::WithCpu for Motherboard {
 
     fn cpu(&self) -> &cpu::CpuR3000 {
         return &self.cpu;
+    }
+}
+
+impl gpu::WithGpu for Motherboard {
+    fn gpu(&self) -> &gpu::Gpu {
+        &self.gpu
+    }
+    fn gpu_mut(&mut self) -> &mut gpu::Gpu {
+        &mut self.gpu
     }
 }

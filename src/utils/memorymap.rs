@@ -28,6 +28,8 @@ pub enum Device {
     DMA,
     /// The Timer controller
     Timers,
+    /// The GPU control ports
+    GPU,
     /// The Sound Processing Unit
     SPU,
     /// The second expansion area
@@ -89,6 +91,7 @@ const RAM_CTRL_RANGE: Range = Range::new(0x0F80_1060, 4);
 const INT_CTRL_RANGE: Range = Range::new(0x0F80_1070, 8);
 const DMA_RANGE: Range = Range::new(0x0F80_1080, 128);
 const TIMER_RANGE: Range = Range::new(0x0F80_1100, 0x30);
+const GPU_RANGE: Range = Range::new(0x0F80_1810, 8);
 const SPU_RANGE: Range = Range::new(0x0F80_1c00, 640);
 const EXP2_RANGE: Range = Range::new(0x0F80_2000, 8 * 1024);
 const EXP3_RANGE: Range = Range::new(0x0FA0_0000, 2048 * 1024);
@@ -105,6 +108,7 @@ const RANGES: &'static [(Device, Range)] = &[
     (Device::IntCtrl, INT_CTRL_RANGE),
     (Device::DMA, DMA_RANGE),
     (Device::Timers, TIMER_RANGE),
+    (Device::GPU, GPU_RANGE),
     (Device::SPU, SPU_RANGE),
     (Device::Expansion2, EXP2_RANGE),
     (Device::Expansion3, EXP3_RANGE),
