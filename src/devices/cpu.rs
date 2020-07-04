@@ -188,7 +188,7 @@ fn match_handler<T: WithCpu + BusDevice>(mnemonic: Mnemonic) -> OpcodeHandler<T>
         Mnemonic::MTLO => op_mtlo,
         Mnemonic::MULT =>           /*op_mult,*/todo!("instr {:?}", mnemonic),
         Mnemonic::MULTU =>          /*op_multu,*/todo!("instr {:?}", mnemonic),
-        Mnemonic::NOR =>            /*op_nor,*/todo!("instr {:?}", mnemonic),
+        Mnemonic::NOR => op_nor,
         Mnemonic::OR => op_or,
         Mnemonic::ORI => op_ori,
         Mnemonic::SB => op_sb,
@@ -579,6 +579,15 @@ op_fn!(op_mtcz, (mb, instr), {
 });
 
 // skip
+
+op_fn!(op_nor, (mb, instr), {
+    let source = instr.rs() as usize;
+    let target = instr.rt() as usize;
+    let dest = instr.rd() as usize;
+    let cpu = mb.cpu_mut();
+    write_reg(cpu, dest, !(get_reg(cpu, source) | get_reg(cpu, target)));
+    None
+});
 
 op_fn!(op_or, (mb, instr), {
     let source = instr.rs() as usize;
