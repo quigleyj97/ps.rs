@@ -1,6 +1,6 @@
+use super::cop0;
+use super::structs::{CpuState, Exception, Instruction, Mnemonic, CPU_POWERON_STATE};
 use crate::devices::bus::{BusDevice, SizedData};
-use crate::devices::cop0;
-use crate::utils::cpustructs::{CpuState, Exception, Instruction, Mnemonic, CPU_POWERON_STATE};
 use crate::utils::decode::decode_instruction;
 use crate::utils::disasm::pprint_instr;
 use log::{debug, trace};

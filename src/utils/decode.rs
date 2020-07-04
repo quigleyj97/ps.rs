@@ -1,4 +1,4 @@
-use crate::utils::cpustructs::{Instruction, Mnemonic};
+use crate::devices::cpu::structs::{Instruction, Mnemonic};
 
 //#region opcode consts
 const OP_SPECIAL: u8 = 0b000000;

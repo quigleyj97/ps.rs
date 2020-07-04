@@ -1,6 +1,6 @@
 //! Utilities for pretty-printing instructions
 
-use super::cpustructs::{CpuState, Instruction, Mnemonic};
+use crate::devices::cpu::structs::{CpuState, Instruction, Mnemonic};
 
 /// Given an instruction mnemonic, return a MIPS asm representation
 ///

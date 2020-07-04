@@ -11,8 +11,8 @@
 //! Presumably cop0 emulation may be required for some titles, and it might have
 //! been useful for Net Yaroze and debug builds.
 
-use crate::devices::cpu::CpuR3000;
-use crate::utils::cpustructs::{Exception, Instruction, MagicAddress};
+use super::structs::{Exception, Instruction, MagicAddress};
+use super::CpuR3000;
 use log::debug;
 
 pub struct Cop0 {
