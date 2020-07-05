@@ -161,10 +161,10 @@ fn match_handler<T: WithCpu + BusDevice>(mnemonic: Mnemonic) -> OpcodeHandler<T>
         Mnemonic::BLTZ => op_bltz,
         Mnemonic::BLTZAL => op_bltzal,
         Mnemonic::BNE => op_bne,
-        Mnemonic::BREAK =>          /*op_break,*/todo!("instr {:?}", mnemonic),
-        Mnemonic::CFCz =>           /*op_cfcz,*/todo!("instr {:?}", mnemonic),
+        Mnemonic::BREAK => op_break,
+        Mnemonic::CFCz => op_cfcz,
         Mnemonic::COPz => op_copz,
-        Mnemonic::CTCz =>           /*op_ctcz,*/todo!("instr {:?}", mnemonic),
+        Mnemonic::CTCz => op_ctcz,
         Mnemonic::DIV => op_div,
         Mnemonic::DIVU => op_divu,
         Mnemonic::J => op_j,
@@ -177,17 +177,17 @@ fn match_handler<T: WithCpu + BusDevice>(mnemonic: Mnemonic) -> OpcodeHandler<T>
         Mnemonic::LHU => op_lhu,
         Mnemonic::LUI => op_lui,
         Mnemonic::LW => op_lw,
-        Mnemonic::LWCz =>           /*op_lwcz,*/todo!("instr {:?}", mnemonic),
-        Mnemonic::LWL =>            /*op_lwl,*/todo!("instr {:?}", mnemonic),
-        Mnemonic::LWR =>            /*op_lwr,*/todo!("instr {:?}", mnemonic),
+        Mnemonic::LWCz => op_lwcz,
+        Mnemonic::LWL => op_lwl,
+        Mnemonic::LWR => op_lwr,
         Mnemonic::MFCz => op_mfcz,
         Mnemonic::MFHI => op_mfhi,
         Mnemonic::MFLO => op_mflo,
         Mnemonic::MTCz => op_mtcz,
         Mnemonic::MTHI => op_mthi,
         Mnemonic::MTLO => op_mtlo,
-        Mnemonic::MULT =>           /*op_mult,*/todo!("instr {:?}", mnemonic),
-        Mnemonic::MULTU =>          /*op_multu,*/todo!("instr {:?}", mnemonic),
+        Mnemonic::MULT => op_mult,
+        Mnemonic::MULTU => op_multu,
         Mnemonic::NOR => op_nor,
         Mnemonic::OR => op_or,
         Mnemonic::ORI => op_ori,
@@ -206,12 +206,13 @@ fn match_handler<T: WithCpu + BusDevice>(mnemonic: Mnemonic) -> OpcodeHandler<T>
         Mnemonic::SUB => op_sub,
         Mnemonic::SUBU => op_subu,
         Mnemonic::SW => op_sw,
-        Mnemonic::SWCz =>           /*op_swcz,*/todo!("instr {:?}", mnemonic),
-        Mnemonic::SWL =>            /*op_swl,*/todo!("instr {:?}", mnemonic),
-        Mnemonic::SWR =>            /*op_swr,*/todo!("instr {:?}", mnemonic),
+        Mnemonic::SWCz => op_swcz,
+        Mnemonic::SWL => op_swl,
+        Mnemonic::SWR => op_swr,
         Mnemonic::SYSCALL => op_syscall,
-        Mnemonic::XOR =>            /*op_xor,*/todo!("instr {:?}", mnemonic),
-        Mnemonic::XORI =>           /*op_xori,*/todo!("instr {:?}", mnemonic),
+        Mnemonic::XOR => op_xor,
+        Mnemonic::XORI => op_xori,
+        Mnemonic::__ILLEGAL__ => op_illegal,
     }
 }
 
@@ -357,7 +358,16 @@ op_fn!(op_bne, (mb, instr), {
     None
 });
 
-// skip
+op_fn!(op_break, (_mb, _instr), { Some(Exception::Breakpoint) });
+
+op_fn!(op_cfcz, (_mb, instr), {
+    let coproc = instr.op() & 0b11;
+    // CFC/CTC is invalid for Cop0
+    match coproc {
+        2 => todo!("GTE"),
+        _ => Some(Exception::CoprocessorUnusable),
+    }
+});
 
 op_fn!(op_copz, (mb, instr), {
     let coproc = instr.op() & 0b11;
@@ -366,12 +376,19 @@ op_fn!(op_copz, (mb, instr), {
             cop0::handle_cop_instr(mb.cpu_mut(), instr);
             None
         }
-        // TODO: Cop2 is the GTE
+        2 => todo!("GTE"),
         _ => Some(Exception::CoprocessorUnusable),
     }
 });
 
-// skip
+op_fn!(op_ctcz, (_mb, instr), {
+    let coproc = instr.op() & 0b11;
+    // CFC/CTC is invalid for Cop0
+    match coproc {
+        2 => todo!("GTE"),
+        _ => Some(Exception::CoprocessorUnusable),
+    }
+});
 
 op_fn!(op_div, (mb, instr), {
     let cpu = mb.cpu_mut();
@@ -520,7 +537,72 @@ op_fn!(op_lw, (mb, instr), {
     None
 });
 
-// skip
+op_fn!(op_lwcz, (_mb, instr), {
+    let coproc = instr.op() & 0b11;
+    // Cop0 doesn't support loads or stores
+    match coproc {
+        2 => todo!("GTE"),
+        _ => Some(Exception::CoprocessorUnusable),
+    }
+});
+
+op_fn!(op_lwl, (mb, instr), {
+    let base = get_reg(mb.cpu(), instr.rs() as usize);
+    let addr = base.wrapping_add(sign_extend!(instr.immediate()));
+    let target = instr.rt() as usize;
+
+    // Note: This instruction actually bypasses the pipeline in some cases,
+    // such as when paired with a LWR instruction. For now I'm not implementing
+    // that, since the register writes are not pipelined, but this will need
+    // special work to implement
+    let current = get_reg(mb.cpu(), target);
+
+    // make an aligned read
+    let aligned_byte = mb.read::<u32>(addr & !0x0000_0003);
+
+    let new_val = match addr & 0x0000_0003 {
+        0 => (current & 0x00FF_FFFF) | (aligned_byte << 24),
+        1 => (current & 0x0000_FFFF) | (aligned_byte << 16),
+        2 => (current & 0x0000_00FF) | (aligned_byte << 8),
+        3 => (current & 0x0000_0000) | (aligned_byte),
+        _ => unreachable!(),
+    };
+
+    // finally, write back to the register
+    write_reg(mb.cpu_mut(), target, new_val);
+
+    // TODO: Bus errors
+    None
+});
+
+op_fn!(op_lwr, (mb, instr), {
+    let base = get_reg(mb.cpu(), instr.rs() as usize);
+    let addr = base.wrapping_add(sign_extend!(instr.immediate()));
+    let target = instr.rt() as usize;
+
+    // Note: This instruction actually bypasses the pipeline in some cases,
+    // such as when paired with a LWR instruction. For now I'm not implementing
+    // that, since the register writes are not pipelined, but this will need
+    // special work to implement
+    let current = get_reg(mb.cpu(), target);
+
+    // make an aligned read
+    let aligned_byte = mb.read::<u32>(addr & !0x0000_0003);
+
+    let new_val = match addr & 0x0000_0003 {
+        0 => (current & 0x0000_0000) | (aligned_byte),
+        1 => (current & 0xFF00_0000) | (aligned_byte >> 8),
+        2 => (current & 0xFFFF_0000) | (aligned_byte >> 16),
+        3 => (current & 0xFFFF_FF00) | (aligned_byte >> 24),
+        _ => unreachable!(),
+    };
+
+    // finally, write back to the register
+    write_reg(mb.cpu_mut(), target, new_val);
+
+    // TODO: Bus errors
+    None
+});
 
 op_fn!(op_mfcz, (mb, instr), {
     let coproc = instr.op() & 0b11;
@@ -530,7 +612,7 @@ op_fn!(op_mfcz, (mb, instr), {
             mb.cpu_mut().state.next_load = (instr.rt() as usize, data);
             None
         }
-        // TODO: Cop2 is the GTE
+        2 => todo!("GTE"),
         _ => Some(Exception::CoprocessorUnusable),
     }
 });
@@ -563,7 +645,36 @@ op_fn!(op_mtlo, (mb, instr), {
     None
 });
 
-// skip
+op_fn!(op_mult, (mb, instr), {
+    let source = instr.rs() as usize;
+    let target = instr.rt() as usize;
+
+    // sign extend
+    let a = get_reg(mb.cpu(), source) as i32 as u64;
+    let b = get_reg(mb.cpu(), target) as i32 as u64;
+
+    let v = a * b as u64;
+
+    mb.cpu_mut().state.hi = (v >> 32) as u32;
+    mb.cpu_mut().state.lo = (v & 0xFFFF_FFFF) as u32;
+
+    None
+});
+
+op_fn!(op_multu, (mb, instr), {
+    let source = instr.rs() as usize;
+    let target = instr.rt() as usize;
+
+    let a = get_reg(mb.cpu(), source) as u64;
+    let b = get_reg(mb.cpu(), target) as u64;
+
+    let v = a * b;
+
+    mb.cpu_mut().state.hi = (v >> 32) as u32;
+    mb.cpu_mut().state.lo = (v & 0xFFFF_FFFF) as u32;
+
+    None
+});
 
 op_fn!(op_mtcz, (mb, instr), {
     let coproc = instr.op() & 0b11;
@@ -573,12 +684,10 @@ op_fn!(op_mtcz, (mb, instr), {
             mb.cpu_mut().cop0.mtc(instr.rd() as usize, data);
             None
         }
-        // TODO: Cop2 is the GTE
+        2 => todo!("GTE"),
         _ => Some(Exception::CoprocessorUnusable),
     }
 });
-
-// skip
 
 op_fn!(op_nor, (mb, instr), {
     let source = instr.rs() as usize;
@@ -776,9 +885,88 @@ op_fn!(op_sw, (mb, instr), {
     None
 });
 
-// skip
+op_fn!(op_swcz, (_mb, instr), {
+    let coproc = instr.op() & 0b11;
+    // Cop0 doesn't support loads or stores
+    match coproc {
+        2 => todo!("GTE"),
+        _ => Some(Exception::CoprocessorUnusable),
+    }
+});
+
+op_fn!(op_swl, (mb, instr), {
+    let base = get_reg(mb.cpu(), instr.rs() as usize);
+    let addr = base.wrapping_add(sign_extend!(instr.immediate()));
+    let target = instr.rt() as usize;
+
+    let current = mb.read::<u32>(addr & !0x0000_0003);
+
+    // make an aligned read
+    let aligned_byte = get_reg(mb.cpu(), target);
+
+    let new_val = match addr & 0x0000_0003 {
+        0 => (current & 0x00FF_FFFF) | (aligned_byte << 24),
+        1 => (current & 0x0000_FFFF) | (aligned_byte << 16),
+        2 => (current & 0x0000_00FF) | (aligned_byte << 8),
+        3 => (current & 0x0000_0000) | (aligned_byte),
+        _ => unreachable!(),
+    };
+
+    // finally, write back to memory
+    mb.write(addr & !0x0000_0003, new_val);
+
+    // TODO: Bus errors
+    None
+});
+
+op_fn!(op_swr, (mb, instr), {
+    let base = get_reg(mb.cpu(), instr.rs() as usize);
+    let addr = base.wrapping_add(sign_extend!(instr.immediate()));
+    let target = instr.rt() as usize;
+
+    let current = mb.read::<u32>(addr & !0x0000_0003);
+
+    // make an aligned read
+    let aligned_byte = get_reg(mb.cpu(), target);
+
+    let new_val = match addr & 0x0000_0003 {
+        0 => (current & 0x0000_0000) | (aligned_byte),
+        1 => (current & 0xFF00_0000) | (aligned_byte >> 8),
+        2 => (current & 0xFFFF_0000) | (aligned_byte >> 16),
+        3 => (current & 0xFFFF_FF00) | (aligned_byte >> 24),
+        _ => unreachable!(),
+    };
+
+    // finally, write back to memory
+    mb.write(addr & !0x0000_0003, new_val);
+
+    // TODO: Bus errors
+    None
+});
 
 op_fn!(op_syscall, (_mb, _instr), { Some(Exception::Syscall) });
+
+op_fn!(op_xor, (mb, instr), {
+    let source = instr.rs() as usize;
+    let target = instr.rt() as usize;
+    let dest = instr.rd() as usize;
+    let cpu = mb.cpu_mut();
+    write_reg(cpu, dest, get_reg(cpu, source) ^ get_reg(cpu, target));
+    None
+});
+
+op_fn!(op_xori, (mb, instr), {
+    let source = instr.rs() as usize;
+    let target = instr.rt() as usize;
+    let data = zero_extend!(instr.immediate());
+    let cpu = mb.cpu_mut();
+    write_reg(cpu, target, get_reg(cpu, source) ^ data);
+    None
+});
+
+op_fn!(op_illegal, (_mb, _instr), {
+    Some(Exception::ReservedInstruction)
+});
 
 //#endregion
 

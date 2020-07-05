@@ -124,6 +124,7 @@ pub fn disasm_instr(mnemonic: Mnemonic, instr: Instruction) -> String {
         Mnemonic::SYSCALL => disasm_bare_instr(mnemonic),
         Mnemonic::XOR => disasm_r_instr(mnemonic, instr),
         Mnemonic::XORI => disasm_i_instr(mnemonic, instr),
+        Mnemonic::__ILLEGAL__ => format!(".db {:08X} ; ILLEGAL", *instr),
     }
 }
 
@@ -265,5 +266,6 @@ fn get_referenced_registers(mnemonic: Mnemonic, instr: Instruction) -> Reference
         Mnemonic::SYSCALL => ReferencedRegisters::None,
         Mnemonic::XOR => ReferencedRegisters::Two(instr.rt() as usize, instr.rs() as usize),
         Mnemonic::XORI => ReferencedRegisters::One(instr.rs() as usize),
+        Mnemonic::__ILLEGAL__ => ReferencedRegisters::None,
     }
 }

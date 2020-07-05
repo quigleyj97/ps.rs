@@ -268,6 +268,8 @@ pub enum Mnemonic {
     XOR,
     /// Logical XOR immediate
     XORI,
+    /// Pseudo-mnemonic used to model illegal/invalid instructions
+    __ILLEGAL__,
 }
 
 #[derive(Debug, Eq, PartialEq)]

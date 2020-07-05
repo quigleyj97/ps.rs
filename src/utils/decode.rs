@@ -1,4 +1,5 @@
 use crate::devices::cpu::structs::{Instruction, Mnemonic};
+use log::debug;
 
 //#region opcode consts
 const OP_SPECIAL: u8 = 0b000000;
@@ -112,7 +113,10 @@ pub fn decode_instruction(word: u32) -> (Mnemonic, Instruction) {
         OP_SWL => Mnemonic::SWL,
         OP_SWR => Mnemonic::SWR,
         OP_XORI => Mnemonic::XORI,
-        _ => panic!("Unexpected illegal opcode: 0x{:08X}", word),
+        _ => {
+            debug!(target: "cpudec", "Illegal opcode encountered: 0x{:08X}", word);
+            Mnemonic::__ILLEGAL__
+        }
     };
     return (mnemonic, instr);
 }
