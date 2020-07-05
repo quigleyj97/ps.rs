@@ -5,7 +5,7 @@ use crate::devices::memctrl::MemoryController;
 use crate::devices::ram::Ram;
 use crate::devices::rom::Rom;
 use crate::utils::memorymap::{map_device, Device};
-use log::debug;
+use log::{debug, warn};
 
 /// This represents the system motherboard.
 ///
@@ -134,9 +134,10 @@ impl BusDevice for Motherboard {
             }
             Device::IntCtrl => {
                 if data != T::from_u32(0x0) {
-                    todo!("Interrupt controller");
+                    warn!(target: "mb", "Enabling write to I_MASK, this program is expecting interrupts");
+                    return;
                 }
-                debug!(target: "memctrl", "Disabling write to I_MASK");
+                debug!(target: "mb", "Disabling write to I_MASK");
             }
             Device::RamCtrl => {
                 debug!(target: "mb", "Attempt to write to RAM memory controller, ignoring for now");

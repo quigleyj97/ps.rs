@@ -21,7 +21,8 @@ impl Gpu {
 impl BusDevice for Gpu {
     fn read<T: crate::devices::bus::SizedData>(&mut self, addr: u32) -> T {
         debug!(target: "gpu", "Read from GP{}", addr / 4);
-        T::from_u32(0)
+        // mock the DMAREADY flag
+        T::from_u32(0x1000_0000)
     }
     fn peek<T: crate::devices::bus::SizedData>(&self, addr: u32) -> Option<T> {
         debug!(target: "gpu", "Peek from GP{}", addr / 4);
