@@ -1,5 +1,6 @@
 use crate::devices::bus::{BusDevice, SizedData};
 use crate::devices::cpu;
+use crate::devices::dma;
 use crate::devices::gpu;
 use crate::devices::memctrl::MemoryController;
 use crate::devices::ram::Ram;
@@ -14,6 +15,7 @@ pub struct Motherboard {
     bios: Rom,
     ram: Ram,
     memctrl: MemoryController,
+    dma: dma::DmaController,
     cpu: cpu::CpuR3000,
     gpu: gpu::Gpu,
 }
@@ -29,6 +31,7 @@ impl Motherboard {
             ram: Ram::with_size(2 * 1024 * 1024),
             cpu: cpu::CpuR3000::new(),
             gpu: gpu::Gpu::new(),
+            dma: dma::DmaController::new(),
             memctrl: MemoryController::new(),
         };
     }
@@ -67,10 +70,7 @@ impl BusDevice for Motherboard {
                 debug!(target: "mb", "Attempt to read from RAM memory controller, ignoring for now");
                 T::from_u32(0)
             }
-            Device::DMA => {
-                debug!(target: "mb", "Attempt to read from DMA register, mocking");
-                T::from_u32(0)
-            }
+            Device::DMA => self.dma.read::<T>(local_addr),
             _ => panic!("Unmapped memory read from dev {:?}: ${:08X}", dev, addr),
             // Device::IOCacheControl => {}
             // Device::None => {}
@@ -145,9 +145,7 @@ impl BusDevice for Motherboard {
             Device::Timers => {
                 debug!(target: "mb", "Attempt to write to timer controller, ignoring for now");
             }
-            Device::DMA => {
-                debug!(target: "mb", "Attempt to write to DMA register, ignoring");
-            }
+            Device::DMA => self.dma.write::<T>(local_addr, data),
             _ => panic!("Unmapped memory write to dev {:?}: ${:08X}", dev, addr),
             // Device::None => {}
             // Device::VMemException => {}

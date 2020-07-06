@@ -29,6 +29,9 @@ pub trait SizedData: Eq + Ord + std::fmt::UpperHex {
 
     /// Given a u32, return a DataType with any MSBs that don't fit truncated
     fn from_u32(data: u32) -> Self;
+
+    /// Return this value as a zero-extended u32
+    fn to_u32(&self) -> u32;
 }
 
 impl SizedData for u8 {
@@ -50,6 +53,10 @@ impl SizedData for u8 {
 
     fn from_u32(data: u32) -> Self {
         (data & 0xFF) as u8
+    }
+
+    fn to_u32(&self) -> u32 {
+        *self as u32
     }
 }
 
@@ -73,6 +80,10 @@ impl SizedData for u16 {
     fn from_u32(data: u32) -> Self {
         (data & 0xFFFF) as u16
     }
+
+    fn to_u32(&self) -> u32 {
+        *self as u32
+    }
 }
 
 impl SizedData for u32 {
@@ -94,5 +105,9 @@ impl SizedData for u32 {
 
     fn from_u32(data: u32) -> Self {
         data
+    }
+
+    fn to_u32(&self) -> u32 {
+        *self as u32
     }
 }
